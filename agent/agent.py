@@ -6,7 +6,7 @@ States: IDLE → ANALYZING → PLANNING → EXECUTING → VERIFYING → RESOLVED
 import json
 import time
 from typing import Annotated, TypedDict, Literal
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
@@ -47,8 +47,8 @@ class AgentState(TypedDict):
     resolved: bool
 
 
-def build_graph(store: IncidentStore, model_name: str = "claude-sonnet-4-6") -> StateGraph:
-    llm = ChatAnthropic(model=model_name, temperature=0).bind_tools(ALL_TOOLS)
+def build_graph(store: IncidentStore, model_name: str = "gpt-5.4") -> StateGraph:
+    llm = ChatOpenAI(model=model_name, temperature=0).bind_tools(ALL_TOOLS)
     tool_node = ToolNode(ALL_TOOLS)
 
     def log(state: AgentState, phase: str, content: str):

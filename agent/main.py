@@ -59,8 +59,8 @@ def metrics_poller(store: IncidentStore):
 
 
 def main():
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        log.error("ANTHROPIC_API_KEY not set. Create a .env file with ANTHROPIC_API_KEY=sk-...")
+    if not os.getenv("OPENAI_API_KEY"):
+        log.error("OPENAI_API_KEY not set. Create a .env file with OPENAI_API_KEY=sk-...")
         sys.exit(1)
 
     wait_for_daemon()

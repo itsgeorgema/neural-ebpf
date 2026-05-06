@@ -39,7 +39,7 @@ A "Low-Level SRE" system that detects runaway processes at the kernel level and 
 |-----------|-----------|
 | Kernel Interface | Go + [cilium/ebpf](https://github.com/cilium/ebpf) (Linux eBPF tracepoints) |
 | Mock Mode | Go ps-polling — works on macOS, no root needed |
-| AI Orchestration | [LangGraph](https://github.com/langchain-ai/langgraph) + Claude (Anthropic) |
+| AI Orchestration | [LangGraph](https://github.com/langchain-ai/langgraph) + GPT-5.4 (OpenAI) |
 | Data Store | Redis (metrics, monologue, incident history) |
 | Dashboard | Streamlit + Plotly |
 | Container | Docker Compose |
@@ -72,7 +72,7 @@ pip install -r requirements.txt
 
 # Create .env
 cp ../.env.example .env
-# Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+# Edit .env and set OPENAI_API_KEY=sk-...
 
 python main.py
 ```
@@ -121,7 +121,7 @@ sudo go run ./daemon/cmd/daemon --cpu-threshold=80 --fd-threshold=200
 
 ```bash
 cp .env.example .env
-# Set ANTHROPIC_API_KEY in .env
+# Set OPENAI_API_KEY in .env
 
 docker compose up --build
 # Dashboard: http://localhost:8501
@@ -171,7 +171,7 @@ IDLE ──► ANALYZE (LLM + get_processes tool)
       RESOLVED            PLAN + EXECUTE (escalate)
 ```
 
-The LLM (Claude) writes the "internal monologue" at each step. These are streamed to Redis and displayed live in the dashboard.
+The LLM (GPT-5.4) writes the "internal monologue" at each step. These are streamed to Redis and displayed live in the dashboard.
 
 ### Redis Schema
 
@@ -234,7 +234,7 @@ See the **Action Items** section at the bottom of this README for steps that req
 
 1. **`go mod tidy`** — Run `cd daemon && go mod tidy` to generate `go.sum` and download dependencies (`cilium/ebpf`, `gorilla/mux`).
 
-2. **Set `ANTHROPIC_API_KEY`** — Copy `.env.example` to `.env` and fill in your Anthropic API key.
+2. **Set `OPENAI_API_KEY`** — Copy `.env.example` to `.env` and fill in your OpenAI API key.
 
 3. **eBPF compilation (Linux only)** — On a Linux machine/VM:
    ```bash
