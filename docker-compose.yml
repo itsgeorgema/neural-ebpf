@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  daemon:
+    build:
+      context: ./daemon
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    privileged: true  # required for eBPF
+    pid: "host"       # required for host PID namespace
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - /sys/kernel/debug:/sys/kernel/debug:ro
+    command: ["/daemon", "--port=8080", "--cpu-threshold=80", "--fd-threshold=200"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DAEMON_URL=http://daemon:8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      daemon:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - DAEMON_URL=http://daemon:8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      daemon:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:
