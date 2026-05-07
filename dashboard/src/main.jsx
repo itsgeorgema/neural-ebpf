@@ -173,6 +173,13 @@ function Controls({ status, processes }) {
   const elapsed = activeLeak ? Math.floor((now - activeLeak.startedAt) / 1000) : 0;
   const remaining = activeLeak ? Math.max(0, activeLeak.duration - elapsed) : 0;
 
+  const servicesReady = status.daemon && status.redis;
+  const offlineReason = !status.daemon && !status.redis
+    ? "daemon + agent offline"
+    : !status.daemon
+    ? "daemon offline"
+    : "agent / redis offline";
+
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), POLL_INTERVAL_MS);
     return () => clearInterval(id);
@@ -185,6 +192,7 @@ function Controls({ status, processes }) {
   }, [activeLeak, remaining]);
 
   async function trigger(kind) {
+    if (!servicesReady) return;
     await fetch("/api/trigger", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -203,11 +211,23 @@ function Controls({ status, processes }) {
         <Metric label="peak cpu" value={`${peakCpu.toFixed(1)}%`} />
       </div>
       <label className="range-label" htmlFor="duration">Leak duration <span>{duration}s</span></label>
-      <input id="duration" type="range" min="10" max="120" step="5" value={duration} onChange={(event) => setDuration(Number(event.target.value))} />
+      <input
+        id="duration"
+        type="range"
+        min="10"
+        max="120"
+        step="5"
+        value={duration}
+        disabled={!servicesReady}
+        onChange={(event) => setDuration(Number(event.target.value))}
+      />
       <div className="button-row">
-        <button onClick={() => trigger("cpu")}>CPU leak</button>
-        <button onClick={() => trigger("fd")}>FD leak</button>
+        <button disabled={!servicesReady} onClick={() => trigger("cpu")}>CPU leak</button>
+        <button disabled={!servicesReady} onClick={() => trigger("fd")}>FD leak</button>
       </div>
+      {!servicesReady && (
+        <p className="offline-notice">{offlineReason} — leak triggers disabled</p>
+      )}
       {activeLeak && (
         <div className="leak-clock">
           <span>{activeLeak.kind.toUpperCase()} leak active</span>

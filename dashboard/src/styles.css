@@ -305,6 +305,25 @@ button:active {
   transform: translateY(1px) scale(0.99);
 }
 
+button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+input[type="range"]:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.offline-notice {
+  margin-top: 12px;
+  font-size: 0.78rem;
+  color: var(--warn);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .triggered,
 .error {
   margin-top: 14px;
