@@ -1,4 +1,4 @@
-.PHONY: help dev-daemon dev-agent dev-dashboard dev install-tools bpf-compile go-tidy
+.PHONY: help dev-daemon dev-agent dev-dashboard dev install-tools bpf-compile go-tidy dashboard-build
 
 help:
 	@echo ""
@@ -7,7 +7,8 @@ help:
 	@echo "  make dev           Start Redis + all services locally (mock mode)"
 	@echo "  make dev-daemon    Run Go daemon in mock mode (macOS/Linux)"
 	@echo "  make dev-agent     Run Python agent"
-	@echo "  make dev-dashboard Run Streamlit dashboard"
+	@echo "  make dev-dashboard Run React dashboard"
+	@echo "  make dashboard-build Build React dashboard"
 	@echo "  make bpf-compile   Compile eBPF C programs (Linux only)"
 	@echo "  make go-tidy       Run go mod tidy"
 	@echo "  make install-tools Install Python dependencies"
@@ -22,7 +23,7 @@ dev-agent:
 	cd agent && python main.py
 
 dev-dashboard:
-	cd dashboard && streamlit run app.py
+	cd dashboard && npm run dev
 
 dev:
 	@echo "Starting Redis in Docker, then all services..."
@@ -40,7 +41,10 @@ go-tidy:
 
 install-tools:
 	pip install -r agent/requirements.txt
-	pip install -r dashboard/requirements.txt
+	cd dashboard && npm install
+
+dashboard-build:
+	cd dashboard && npm run build
 
 docker-up:
 	docker compose up --build

@@ -4,9 +4,9 @@ A "Low-Level SRE" system that detects runaway processes at the kernel level and 
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Surgery Console (Streamlit :8501)     │
-│   [🔥 CPU Leak]  [📂 FD Leak]  │  📈 Real-time graph    │
-│   Live processes               │  🤖 Agent Monologue    │
+│                    Surgery Console (React :8501)         │
+│   [CPU Leak]  [FD Leak]  │  Smoothed CPU graph          │
+│   Live processes         │  Agent monologue             │
 └────────────────────┬───────────┴──────────────────────┘
                      │ HTTP/SSE
           ┌──────────▼──────────┐
@@ -41,7 +41,7 @@ A "Low-Level SRE" system that detects runaway processes at the kernel level and 
 | Mock Mode | Go ps-polling — works on macOS, no root needed |
 | AI Orchestration | [LangGraph](https://github.com/langchain-ai/langgraph) + GPT-5.4 (OpenAI) |
 | Data Store | Redis (metrics, monologue, incident history) |
-| Dashboard | Streamlit + Plotly |
+| Dashboard | React + Vite + Node API |
 | Container | Docker Compose |
 
 ## Quick Start (macOS / Mock Mode)
@@ -81,15 +81,15 @@ python main.py
 
 ```bash
 cd dashboard
-pip install -r requirements.txt
-streamlit run app.py
+npm install
+npm run dev
 # Open http://localhost:8501
 ```
 
 ### 5. Trigger a Demo
 
-Open the dashboard, click **🔥 CPU Leak**, then watch:
-1. The CPU graph spike upward
+Open the dashboard, click **CPU Leak**, then watch:
+1. The CPU graph separates standard process load from leak/suspect load
 2. The agent monologue appear (`ANALYZING → EXECUTING → VERIFYING → RESOLVED`)
 3. CPU return to baseline
 
@@ -213,8 +213,9 @@ neural-ebpf/
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── dashboard/
-│   ├── app.py                      # Streamlit Surgery Console
-│   ├── requirements.txt
+│   ├── src/                        # React Surgery Console
+│   ├── server.js                   # Node API for daemon/Redis/scripts
+│   ├── package.json
 │   └── Dockerfile
 ├── scripts/
 │   ├── cpu_leak.py                 # CPU anomaly simulator
@@ -252,6 +253,6 @@ See the **Action Items** section at the bottom of this README for steps that req
 
 6. **Redis** — `brew services start redis` (macOS) or `docker compose up redis -d`.
 
-7. **Python venvs** — Create and activate venvs for `agent/` and `dashboard/`, then `pip install -r requirements.txt` in each.
+7. **Local dependencies** — Create a Python venv for `agent/`, then install `agent/requirements.txt`. Run `npm install` in `dashboard/`.
 
-8. **Test the demo** — Run `make dev-daemon` + `make dev-agent` + `make dev-dashboard` in three terminal tabs, then open `http://localhost:8501` and click 🔥 CPU Leak.
+8. **Test the demo** — Run `make dev-daemon` + `make dev-agent` + `make dev-dashboard` in three terminal tabs, then open `http://localhost:8501` and click CPU Leak.

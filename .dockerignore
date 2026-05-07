@@ -1,0 +1,11 @@
+.git
+.DS_Store
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+dashboard/node_modules/
+dashboard/dist/
+daemon/bpf/*.o
+daemon/bpf/vmlinux.h
