@@ -237,7 +237,7 @@ function ProcessList({ processes }) {
 }
 
 function Controls({ status, processes, incidents }) {
-  const [duration, setDuration] = useState(30);
+  const [duration, setDuration] = useState(45);
   const [activeLeak, setActiveLeak] = useState(null);
   const [now, setNow] = useState(Date.now());
   const totalCpuRaw = processes.reduce((sum, proc) => sum + proc.cpu_percent, 0);

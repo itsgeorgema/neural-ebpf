@@ -41,6 +41,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/events", s.handleEvents).Methods("GET")
 	s.router.HandleFunc("/mitigate", s.handleMitigate).Methods("POST")
 	s.router.HandleFunc("/processes", s.handleProcesses).Methods("GET")
+	s.router.HandleFunc("/watchdog", s.handleWatchdog).Methods("POST")
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +68,18 @@ func (s *Server) handleMitigate(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusInternalServerError
 	}
 	writeJSON(w, status, result)
+}
+
+func (s *Server) handleWatchdog(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Timeout int `json:"timeout"` // seconds
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Timeout <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "timeout must be a positive integer (seconds)"})
+		return
+	}
+	s.mon.SetWatchdogTimeout(time.Duration(req.Timeout) * time.Second)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "timeout": req.Timeout})
 }
 
 // handleEvents streams kernel events as Server-Sent Events (SSE).

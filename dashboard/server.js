@@ -86,7 +86,7 @@ app.get("/api/metrics/:pid", async (req, res) => {
   res.json(metrics.reverse());
 });
 
-app.post("/api/trigger", (req, res) => {
+app.post("/api/trigger", async (req, res) => {
   const kind = req.body?.kind === "fd" ? "fd" : "cpu";
   const duration = Math.max(10, Math.min(120, Number(req.body?.duration || 30)));
   const script = path.join(scriptsDir, `${kind}_leak.py`);
@@ -95,6 +95,18 @@ app.post("/api/trigger", (req, res) => {
     stdio: "ignore",
   });
   child.unref();
+
+  // Arm the daemon watchdog to match the slider duration exactly
+  try {
+    await daemonFetch("/watchdog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timeout: duration }),
+    });
+  } catch {
+    // Best-effort — trigger still proceeds if daemon watchdog update fails
+  }
+
   res.json({ ok: true, kind, duration });
 });
 

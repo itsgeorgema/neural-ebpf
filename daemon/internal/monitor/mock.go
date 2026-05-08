@@ -18,6 +18,8 @@ func (m *Monitor) runMockPoller() {
 	// Track consecutive high-CPU seconds per PID to avoid alert storms
 	highCPUCount := make(map[int]int)
 	alertedPIDs := make(map[int]bool)
+	// watchdogDeadlines[pid] = time after which the daemon force-kills if still anomalous
+	watchdogDeadlines := make(map[int]time.Time)
 
 	for {
 		select {
@@ -53,10 +55,16 @@ func (m *Monitor) runMockPoller() {
 						}
 						log.Printf("[mock] ALERT: %s", ev.Message)
 						m.Emit(ev)
+						// Arm watchdog deadline if configured
+						if wd := m.getWatchdogTimeout(); wd > 0 {
+							watchdogDeadlines[p.PID] = time.Now().Add(wd)
+							log.Printf("[watchdog] armed for PID %d — will force-kill at %s if unresolved",
+								p.PID, watchdogDeadlines[p.PID].Format("15:04:05"))
+						}
 					}
 				} else {
 					if alertedPIDs[p.PID] {
-						// Process recovered
+						// Process recovered — agent succeeded
 						ev := KernelEvent{
 							ID:        newEventID(),
 							Timestamp: time.Now(),
@@ -67,6 +75,7 @@ func (m *Monitor) runMockPoller() {
 						}
 						m.Emit(ev)
 						delete(alertedPIDs, p.PID)
+						delete(watchdogDeadlines, p.PID)
 					}
 					highCPUCount[p.PID] = 0
 				}
@@ -100,6 +109,44 @@ func (m *Monitor) runMockPoller() {
 				}
 			}
 
+			// Watchdog: force-kill any PID whose deadline has passed and is still anomalous
+			now := time.Now()
+			for pid, deadline := range watchdogDeadlines {
+				if now.Before(deadline) {
+					continue
+				}
+				// Check if still present and still consuming high CPU
+				m.procMu.RLock()
+				proc, alive := m.processes[pid]
+				m.procMu.RUnlock()
+				if !alive || proc.CPUPercent < m.cfg.CPUThreshold {
+					// Already gone or already recovered — agent succeeded
+					delete(watchdogDeadlines, pid)
+					continue
+				}
+				elapsed := now.Sub(deadline.Add(-m.getWatchdogTimeout()))
+				log.Printf("[watchdog] AGENT FAILED: PID %d (%s) still at %.1f%% CPU after %.0fs — forcing kill",
+					pid, proc.Name, proc.CPUPercent, elapsed.Seconds())
+				killProcess(MitigationRequest{
+					PID:    pid,
+					Action: ActionKill,
+					Reason: fmt.Sprintf("watchdog: agent failed to mitigate within %.0fs", m.getWatchdogTimeout().Seconds()),
+				})
+				ev := KernelEvent{
+					ID:        newEventID(),
+					Timestamp: now,
+					Type:      EventWatchdogKill,
+					PID:       pid,
+					Process:   *proc,
+					Message: fmt.Sprintf("Watchdog force-killed PID %d (%s) after %.0fs — agent failed to mitigate",
+						pid, proc.Name, elapsed.Seconds()),
+				}
+				m.Emit(ev)
+				delete(watchdogDeadlines, pid)
+				delete(alertedPIDs, pid)
+				highCPUCount[pid] = 0
+			}
+
 			// Cleanup PIDs that no longer exist
 			for pid := range alertedPIDs {
 				absPID := pid
@@ -116,6 +163,7 @@ func (m *Monitor) runMockPoller() {
 				if !found {
 					delete(alertedPIDs, pid)
 					delete(highCPUCount, pid)
+					delete(watchdogDeadlines, pid)
 				}
 			}
 

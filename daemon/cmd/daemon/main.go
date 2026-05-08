@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/itsgeorgema/neural-ebpf/daemon/internal/api"
 	"github.com/itsgeorgema/neural-ebpf/daemon/internal/monitor"
@@ -16,12 +17,14 @@ func main() {
 	port := flag.String("port", "8080", "HTTP API listen port")
 	cpuThreshold := flag.Float64("cpu-threshold", 80.0, "CPU% threshold to trigger alert")
 	fdThreshold := flag.Int("fd-threshold", 200, "Open FD count threshold to trigger alert")
+	watchdogTimeout := flag.Int("watchdog-timeout", 0, "Seconds before daemon force-kills unmitigated process (0=disabled, overridable via POST /watchdog)")
 	flag.Parse()
 
 	mon := monitor.New(monitor.Config{
-		Mock:         *mock,
-		CPUThreshold: *cpuThreshold,
-		FDThreshold:  *fdThreshold,
+		Mock:            *mock,
+		CPUThreshold:    *cpuThreshold,
+		FDThreshold:     *fdThreshold,
+		WatchdogTimeout: time.Duration(*watchdogTimeout) * time.Second,
 	})
 
 	srv := api.New(mon, *port)

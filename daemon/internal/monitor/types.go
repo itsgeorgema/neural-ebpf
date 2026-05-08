@@ -5,9 +5,10 @@ import "time"
 type EventType string
 
 const (
-	EventCPUAnomaly EventType = "cpu_anomaly"
-	EventFDAnomaly  EventType = "fd_anomaly"
-	EventResolved   EventType = "resolved"
+	EventCPUAnomaly   EventType = "cpu_anomaly"
+	EventFDAnomaly    EventType = "fd_anomaly"
+	EventResolved     EventType = "resolved"
+	EventWatchdogKill EventType = "watchdog_kill"
 )
 
 type ProcessStats struct {

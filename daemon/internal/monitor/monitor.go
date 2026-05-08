@@ -9,9 +9,10 @@ import (
 )
 
 type Config struct {
-	Mock         bool
-	CPUThreshold float64
-	FDThreshold  int
+	Mock            bool
+	CPUThreshold    float64
+	FDThreshold     int
+	WatchdogTimeout time.Duration // 0 = disabled
 }
 
 type Monitor struct {
@@ -23,6 +24,8 @@ type Monitor struct {
 	cancel    context.CancelFunc
 	processes map[int]*ProcessStats
 	procMu    sync.RWMutex
+	wdTimeout time.Duration
+	wdMu      sync.RWMutex
 }
 
 func New(cfg Config) *Monitor {
@@ -33,7 +36,23 @@ func New(cfg Config) *Monitor {
 		processes: make(map[int]*ProcessStats),
 		ctx:       ctx,
 		cancel:    cancel,
+		wdTimeout: cfg.WatchdogTimeout,
 	}
+}
+
+// SetWatchdogTimeout updates the watchdog kill timeout at runtime.
+// 0 disables the watchdog.
+func (m *Monitor) SetWatchdogTimeout(d time.Duration) {
+	m.wdMu.Lock()
+	m.wdTimeout = d
+	m.wdMu.Unlock()
+	log.Printf("[watchdog] timeout set to %.0fs", d.Seconds())
+}
+
+func (m *Monitor) getWatchdogTimeout() time.Duration {
+	m.wdMu.RLock()
+	defer m.wdMu.RUnlock()
+	return m.wdTimeout
 }
 
 func (m *Monitor) Start() error {

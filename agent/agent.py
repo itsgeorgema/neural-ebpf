@@ -159,16 +159,31 @@ Analyze this incident. Use get_processes to get current system state, then expla
             1 for m in state["messages"]
             if isinstance(m, ToolMessage) and getattr(m, "name", None) in MITIGATION_TOOLS
         )
+        genuinely_resolved = state.get("resolved", False)
+
+        if not genuinely_resolved:
+            # Exhausted all attempts without confirming success
+            log(state, "FAILED",
+                f"Agent exhausted {attempts} mitigation attempt(s) without resolving incident. "
+                f"PID {state['event'].get('pid')} may still be anomalous. "
+                f"Daemon watchdog will force-kill if process is still running.")
+            store.save_incident({
+                "event": state["event"],
+                "resolution": "agent_failed",
+                "attempts": attempts,
+                "timestamp": time.time(),
+            })
+            return {"phase": "FAILED", "resolved": False}
+
         log(state, "RESOLVED",
             f"Incident resolved after {attempts} mitigation attempt(s). "
             f"PID {state['event'].get('pid')} is no longer anomalous.")
-        incident = {
+        store.save_incident({
             "event": state["event"],
             "resolution": "mitigated",
             "attempts": attempts,
             "timestamp": time.time(),
-        }
-        store.save_incident(incident)
+        })
         return {"phase": "RESOLVED", "resolved": True}
 
     def route_after_analyze(state: AgentState) -> Literal["tools", "plan_execute"]:
