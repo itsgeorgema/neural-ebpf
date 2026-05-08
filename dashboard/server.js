@@ -44,11 +44,15 @@ async function readJsonList(key, count) {
 }
 
 app.get("/api/status", async (_req, res) => {
-  const [redisOk, daemon] = await Promise.all([
+  const [redisOk, health] = await Promise.all([
     redisPing(),
-    daemonFetch("/health").then(() => true).catch(() => false),
+    daemonFetch("/health").catch(() => null),
   ]);
-  res.json({ daemon, redis: redisOk });
+  res.json({
+    daemon: Boolean(health),
+    redis: redisOk,
+    cpu_cores: Number(health?.cpu_cores) || null,
+  });
 });
 
 app.get("/api/processes", async (_req, res) => {

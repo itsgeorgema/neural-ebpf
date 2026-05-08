@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -42,7 +43,11 @@ func (s *Server) routes() {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "time": time.Now().Format(time.RFC3339)})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":    "ok",
+		"time":      time.Now().Format(time.RFC3339),
+		"cpu_cores": runtime.NumCPU(),
+	})
 }
 
 func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
