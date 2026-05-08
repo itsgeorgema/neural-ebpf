@@ -28,9 +28,15 @@ function timeLabel(ts = Date.now()) {
   }).format(ts);
 }
 
+function systemCpuPercent(processCpuPercent, cores) {
+  const normalizedCores = Number(cores);
+  if (!Number.isFinite(normalizedCores) || normalizedCores <= 0) return null;
+  return Math.min(100, Math.max(0, processCpuPercent / normalizedCores));
+}
+
 function useDashboardData() {
   const [state, setState] = useState({
-    status: { daemon: false, redis: false },
+    status: { daemon: false, redis: false, cpu_cores: null },
     processes: [],
     monologue: [],
     incidents: [],
@@ -128,31 +134,32 @@ function useWebViewLocomotiveScroll(refreshKey) {
   }, [refreshKey]);
 }
 
-function buildSample(processes, previousPoint) {
+function buildSample(processes, previousPoint, cpuCores) {
   const standard = processes.filter((proc) => !isSuspectProcess(proc));
   const suspects = processes.filter(isSuspectProcess);
-  const baselineRaw = standard
-    .sort((a, b) => b.cpu_percent - a.cpu_percent)
-    .slice(0, 12)
-    .reduce((sum, proc) => sum + proc.cpu_percent, 0);
-  const suspectRaw = Math.max(0, ...suspects.map((proc) => proc.cpu_percent));
+  const baselineRaw = standard.reduce((sum, proc) => sum + proc.cpu_percent, 0);
+  const suspectRaw = suspects.reduce((sum, proc) => sum + proc.cpu_percent, 0);
+  const baseline = systemCpuPercent(baselineRaw, cpuCores);
+  const suspect = systemCpuPercent(suspectRaw, cpuCores);
+  if (baseline === null || suspect === null) return null;
 
   return {
     label: timeLabel(),
-    baseline: Number(smooth(previousPoint?.baseline, Math.min(100, baselineRaw)).toFixed(1)),
-    suspect: Number(smooth(previousPoint?.suspect, Math.min(100, suspectRaw), 0.5).toFixed(1)),
+    baseline: Number(smooth(previousPoint?.baseline, baseline).toFixed(1)),
+    suspect: Number(smooth(previousPoint?.suspect, suspect, 0.5).toFixed(1)),
   };
 }
 
-function CpuGraph({ processes }) {
+function CpuGraph({ processes, cpuCores }) {
   const [points, setPoints] = useState([]);
 
   useEffect(() => {
     setPoints((current) => {
-      const point = buildSample(processes, current[current.length - 1]);
+      const point = buildSample(processes, current[current.length - 1], cpuCores);
+      if (!point) return current;
       return [...current, point].slice(-MAX_POINTS);
     });
-  }, [processes]);
+  }, [processes, cpuCores]);
 
   const path = useMemo(() => {
     const width = 760;
@@ -171,7 +178,7 @@ function CpuGraph({ processes }) {
       <div className="section-heading">
         <div>
           <p className="eyebrow">CPU activity</p>
-          <h2>Muted baseline, isolated leaks</h2>
+          <h2>System capacity, isolated leaks</h2>
         </div>
         <div className="legend">
           <span><i className="legend-base" />standard {latest.baseline.toFixed(1)}%</span>
@@ -189,7 +196,7 @@ function CpuGraph({ processes }) {
           <path d={path.baseline} className="line line-base" />
           <path d={path.suspect} className="line line-leak" />
         </svg>
-        {points.length === 0 && <div className="empty-chart">Waiting for daemon samples</div>}
+        {points.length === 0 && <div className="empty-chart">Waiting for daemon CPU capacity</div>}
       </div>
     </section>
   );
@@ -218,7 +225,7 @@ function ProcessList({ processes }) {
               <span>PID {proc.pid}</span>
             </div>
             <dl>
-              <div><dt>CPU</dt><dd>{proc.cpu_percent.toFixed(1)}%</dd></div>
+              <div><dt>PROC CPU</dt><dd>{proc.cpu_percent.toFixed(1)}%</dd></div>
               <div><dt>MEM</dt><dd>{Number(proc.mem_mb || 0).toFixed(1)}</dd></div>
               <div><dt>FD</dt><dd>{proc.fd_count || 0}</dd></div>
             </dl>
@@ -233,7 +240,9 @@ function Controls({ status, processes }) {
   const [duration, setDuration] = useState(30);
   const [activeLeak, setActiveLeak] = useState(null);
   const [now, setNow] = useState(Date.now());
-  const peakCpu = Math.max(0, ...processes.map((proc) => proc.cpu_percent));
+  const totalCpuRaw = processes.reduce((sum, proc) => sum + proc.cpu_percent, 0);
+  const systemCpu = systemCpuPercent(totalCpuRaw, status.cpu_cores);
+  const maxProcCpu = processes.length === 0 ? null : Math.max(0, ...processes.map((proc) => proc.cpu_percent));
   const suspects = processes.filter(isSuspectProcess).length;
   const elapsed = activeLeak ? Math.floor((now - activeLeak.startedAt) / 1000) : 0;
   const remaining = activeLeak ? Math.max(0, activeLeak.duration - elapsed) : 0;
@@ -272,8 +281,10 @@ function Controls({ status, processes }) {
       <div className="status-grid">
         <Metric label="daemon" value={status.daemon ? "online" : "offline"} live={status.daemon} />
         <Metric label="redis" value={status.redis ? "online" : "offline"} live={status.redis} />
+        <Metric label="cpu cores" value={status.cpu_cores ?? "--"} />
         <Metric label="suspects" value={suspects} />
-        <Metric label="peak cpu" value={`${peakCpu.toFixed(1)}%`} />
+        <Metric label="system cpu" value={systemCpu === null ? "--" : `${systemCpu.toFixed(1)}%`} />
+        <Metric label="max proc" value={maxProcCpu === null ? "--" : `${maxProcCpu.toFixed(1)}%`} />
       </div>
       <label className="range-label" htmlFor="duration">Leak duration <span>{duration}s</span></label>
       <input
@@ -371,7 +382,7 @@ function App() {
   return (
     <main data-scroll-section>
       <header className="hero" data-scroll>
-        <div data-scroll data-scroll-speed="0.18">
+        <div>
           <p className="eyebrow">Neural eBPF</p>
           <h1>Surgery Console</h1>
           <p className="lede">Kernel eBPF telemetry, mitigation state, and leak isolation via a kernel agent.</p>
@@ -390,7 +401,7 @@ function App() {
           <ProcessList processes={processes} />
         </aside>
         <div className="main-column">
-          <CpuGraph processes={processes} />
+          <CpuGraph processes={processes} cpuCores={status.cpu_cores} />
           <div className="lower-grid">
             <Monologue entries={monologue} />
             <Incidents incidents={incidents} />

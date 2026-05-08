@@ -493,8 +493,7 @@ input[type="range"]:disabled {
   padding: 13px;
   border-left: 3px solid var(--base);
   background: rgba(255, 255, 255, 0.025);
-  animation: row-in 420ms var(--ease-out) both;
-  transition: background 180ms ease, transform 180ms var(--ease-snap), border-color 180ms ease;
+  transition: background 180ms ease, border-color 180ms ease;
 }
 
 .process.suspect {
@@ -502,7 +501,6 @@ input[type="range"]:disabled {
   background: rgba(199, 120, 85, 0.08);
 }
 
-.process:hover,
 .incident:hover,
 .log-line:hover {
   transform: translateX(3px);
@@ -515,12 +513,6 @@ input[type="range"]:disabled {
 .process.suspect:hover {
   background: rgba(199, 120, 85, 0.12);
 }
-
-.process-list .process:nth-child(1) { animation-delay: 700ms; }
-.process-list .process:nth-child(2) { animation-delay: 740ms; }
-.process-list .process:nth-child(3) { animation-delay: 780ms; }
-.process-list .process:nth-child(4) { animation-delay: 820ms; }
-.process-list .process:nth-child(n + 5) { animation-delay: 860ms; }
 
 .process strong,
 .process span {
