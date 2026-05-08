@@ -236,7 +236,7 @@ function ProcessList({ processes }) {
   );
 }
 
-function Controls({ status, processes }) {
+function Controls({ status, processes, incidents }) {
   const [duration, setDuration] = useState(30);
   const [activeLeak, setActiveLeak] = useState(null);
   const [now, setNow] = useState(Date.now());
@@ -265,12 +265,14 @@ function Controls({ status, processes }) {
     }
   }, [activeLeak, remaining]);
 
-  // Stop the timer early if the leak process was already mitigated by the agent
+  // Stop the timer early if the agent already resolved an incident for this leak
   useEffect(() => {
-    if (!activeLeak || elapsed < 5) return;
-    const hasLeakProcess = processes.some((p) => String(p.name || "").toLowerCase().includes("leak"));
-    if (!hasLeakProcess) setActiveLeak(null);
-  }, [processes, activeLeak, elapsed]);
+    if (!activeLeak || elapsed < 3) return;
+    const resolved = incidents.some(
+      (inc) => inc.timestamp != null && inc.timestamp * 1000 >= activeLeak.startedAt
+    );
+    if (resolved) setActiveLeak(null);
+  }, [incidents, activeLeak, elapsed]);
 
   async function trigger(kind) {
     if (!servicesReady) return;
@@ -404,7 +406,7 @@ function App() {
 
       <div className="layout" data-scroll>
         <aside>
-          <Controls status={status} processes={processes} />
+          <Controls status={status} processes={processes} incidents={incidents} />
           <ProcessList processes={processes} />
         </aside>
         <div className="main-column">

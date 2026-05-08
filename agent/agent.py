@@ -39,6 +39,9 @@ Always explain your reasoning step by step. Be specific about PIDs and percentag
 Format your monologue clearly so it can be displayed in the Surgery Console UI."""
 
 
+MITIGATION_TOOLS = {"throttle_cpu", "suspend_process", "kill_process", "set_fd_limit", "resume_process"}
+
+
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     event: dict          # The triggering kernel event
@@ -61,8 +64,21 @@ def build_graph(store: IncidentStore, model_name: str = "gpt-5.4") -> StateGraph
         store.append_monologue(entry)
         print(f"[{phase}] {content}")
 
+    def _last_tool_results(messages: list) -> dict[str, ToolMessage]:
+        """Return {tool_call_id: ToolMessage} for the most recent batch of tool results."""
+        return {m.tool_call_id: m for m in messages if isinstance(m, ToolMessage)}
+
     def analyze_node(state: AgentState) -> dict:
         event = state["event"]
+        last_msg = state["messages"][-1] if state["messages"] else None
+
+        # Second pass: tool results just arrived — complete the analysis
+        if isinstance(last_msg, ToolMessage):
+            response = llm.invoke([SystemMessage(content=SYSTEM_PROMPT)] + state["messages"])
+            log(state, "ANALYZING", response.content or "(analyzing)")
+            return {"messages": [response], "phase": "ANALYZING"}
+
+        # First pass: log the alert and ask LLM to call get_processes
         log(state, "ANALYZING",
             f"Kernel alert received: {event.get('message')}. "
             f"PID={event.get('pid')}, type={event.get('type')}. "
@@ -81,23 +97,31 @@ Analyze this incident. Use get_processes to get current system state, then expla
         return {"messages": [HumanMessage(content=prompt), response], "phase": "ANALYZING"}
 
     def plan_execute_node(state: AgentState) -> dict:
-        # Log any tool results that just came back (mitigation telemetry)
-        for msg in reversed(state["messages"]):
-            if isinstance(msg, ToolMessage):
+        last_ai = next((m for m in reversed(state["messages"]) if isinstance(m, AIMessage)), None)
+
+        # Re-entering after mitigation tool calls completed — log each result to monologue
+        if last_ai and last_ai.tool_calls:
+            tool_msgs = _last_tool_results(state["messages"])
+            for tc in last_ai.tool_calls:
+                name = tc.get("name", "unknown") if isinstance(tc, dict) else getattr(tc, "name", "unknown")
+                args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                tc_id = tc.get("id", "") if isinstance(tc, dict) else getattr(tc, "id", "")
+                result_msg = tool_msgs.get(tc_id)
                 try:
-                    result = json.loads(msg.content) if isinstance(msg.content, str) else msg.content
+                    result = json.loads(result_msg.content) if result_msg else {}
+                except Exception:
+                    result = {"output": getattr(result_msg, "content", "")}
+
+                args_str = ", ".join(f"{k}={v}" for k, v in args.items() if k != "reason")
+                outcome = result.get("message") or result.get("output") or str(result)
+                log(state, "EXECUTING", f"→ {name}({args_str}): {outcome}")
+
+                if name in MITIGATION_TOOLS:
                     store.log_mitigation(
                         pid=state["event"].get("pid", 0),
-                        action=msg.name or "unknown",
-                        result=result if isinstance(result, dict) else {"output": result},
+                        action=name,
+                        result=result if isinstance(result, dict) else {"output": str(result)},
                     )
-                except Exception:
-                    pass
-                break
-
-        log(state, "EXECUTING", "Applying mitigation plan...")
-        last_ai = next((m for m in reversed(state["messages"]) if isinstance(m, AIMessage)), None)
-        if last_ai and last_ai.tool_calls:
             return {"phase": "EXECUTING"}
 
         prompt = "Now execute your mitigation plan using the available tools. Start with throttle_cpu."
@@ -107,6 +131,16 @@ Analyze this incident. Use get_processes to get current system state, then expla
         return {"messages": [HumanMessage(content=prompt), response], "phase": "EXECUTING", "attempts": state["attempts"] + 1}
 
     def verify_node(state: AgentState) -> dict:
+        last_msg = state["messages"][-1] if state["messages"] else None
+
+        # Second pass: tool results just arrived — complete the verification
+        if isinstance(last_msg, ToolMessage):
+            response = llm.invoke([SystemMessage(content=SYSTEM_PROMPT)] + state["messages"])
+            log(state, "VERIFYING", response.content or "(verifying)")
+            resolved = "success" in (response.content or "").lower() or "normalized" in (response.content or "").lower()
+            return {"messages": [response], "phase": "VERIFYING", "resolved": resolved}
+
+        # First pass: ask LLM to re-check and evaluate
         log(state, "VERIFYING", "Verifying mitigation effectiveness...")
         prompt = (
             "Use get_processes to verify the mitigation worked. "
@@ -121,13 +155,17 @@ Analyze this incident. Use get_processes to get current system state, then expla
         return {"messages": [HumanMessage(content=prompt), response], "phase": "VERIFYING", "resolved": resolved}
 
     def resolved_node(state: AgentState) -> dict:
+        attempts = sum(
+            1 for m in state["messages"]
+            if isinstance(m, ToolMessage) and getattr(m, "name", None) in MITIGATION_TOOLS
+        )
         log(state, "RESOLVED",
-            f"Incident resolved after {state['attempts']} mitigation attempt(s). "
+            f"Incident resolved after {attempts} mitigation attempt(s). "
             f"PID {state['event'].get('pid')} is no longer anomalous.")
         incident = {
             "event": state["event"],
             "resolution": "mitigated",
-            "attempts": state["attempts"],
+            "attempts": attempts,
             "timestamp": time.time(),
         }
         store.save_incident(incident)
@@ -149,8 +187,21 @@ Analyze this incident. Use get_processes to get current system state, then expla
         last = state["messages"][-1] if state["messages"] else None
         if isinstance(last, AIMessage) and last.tool_calls:
             return "tools"
-        if state.get("resolved") or state["attempts"] >= 3:
+        real_attempts = sum(
+            1 for m in state["messages"]
+            if isinstance(m, ToolMessage) and getattr(m, "name", None) in MITIGATION_TOOLS
+        )
+        if state.get("resolved") or real_attempts >= 3:
             return "resolved"
+        return "plan_execute"
+
+    def route_after_tools(state: AgentState) -> Literal["analyze", "plan_execute", "verify"]:
+        """Route tool results back to the node that called them, based on current phase."""
+        phase = state.get("phase", "EXECUTING")
+        if phase == "ANALYZING":
+            return "analyze"
+        if phase == "VERIFYING":
+            return "verify"
         return "plan_execute"
 
     graph = StateGraph(AgentState)
@@ -164,7 +215,7 @@ Analyze this incident. Use get_processes to get current system state, then expla
     graph.add_conditional_edges("analyze", route_after_analyze)
     graph.add_conditional_edges("plan_execute", route_after_execute)
     graph.add_conditional_edges("verify", route_after_verify)
-    graph.add_edge("tools", "plan_execute")  # after tool results, re-enter execution
+    graph.add_conditional_edges("tools", route_after_tools)
     graph.add_edge("resolved", END)
 
     return graph.compile()

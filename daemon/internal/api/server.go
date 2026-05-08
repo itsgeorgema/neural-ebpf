@@ -26,10 +26,11 @@ func New(mon *monitor.Monitor, port string) *Server {
 
 func (s *Server) Run() error {
 	srv := &http.Server{
-		Addr:         ":" + s.port,
-		Handler:      s.router,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 0, // SSE streams need no write timeout
+		Addr:              ":" + s.port,
+		Handler:           s.router,
+		ReadHeaderTimeout: 10 * time.Second, // only times out reading request headers
+		WriteTimeout:      0,                 // SSE streams need no write timeout
+		IdleTimeout:       0,                 // keep SSE connections alive indefinitely
 	}
 	return srv.ListenAndServe()
 }
@@ -86,8 +87,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[sse] client connected: %s", r.RemoteAddr)
 
-	// Send a heartbeat every 15s to keep the connection alive
-	heartbeat := time.NewTicker(15 * time.Second)
+	// Send a heartbeat every 8s — must be shorter than any proxy/LB idle timeout
+	heartbeat := time.NewTicker(8 * time.Second)
 	defer heartbeat.Stop()
 
 	for {
