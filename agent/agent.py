@@ -81,6 +81,20 @@ Analyze this incident. Use get_processes to get current system state, then expla
         return {"messages": [HumanMessage(content=prompt), response], "phase": "ANALYZING"}
 
     def plan_execute_node(state: AgentState) -> dict:
+        # Log any tool results that just came back (mitigation telemetry)
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, ToolMessage):
+                try:
+                    result = json.loads(msg.content) if isinstance(msg.content, str) else msg.content
+                    store.log_mitigation(
+                        pid=state["event"].get("pid", 0),
+                        action=msg.name or "unknown",
+                        result=result if isinstance(result, dict) else {"output": result},
+                    )
+                except Exception:
+                    pass
+                break
+
         log(state, "EXECUTING", "Applying mitigation plan...")
         last_ai = next((m for m in reversed(state["messages"]) if isinstance(m, AIMessage)), None)
         if last_ai and last_ai.tool_calls:

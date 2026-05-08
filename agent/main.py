@@ -102,6 +102,9 @@ def main():
                         pid = data.get("pid", 0)
                         ev_type = data.get("type", "")
 
+                        # Record every kernel event to Redis for telemetry
+                        store.log_kernel_event(data)
+
                         if ev_type == "resolved":
                             active_pids.discard(pid)
                             log.info("PID %d resolved — removing from active set", pid)

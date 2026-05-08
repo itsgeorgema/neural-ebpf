@@ -42,6 +42,18 @@ class IncidentStore:
         raw = self.r.lrange(self.monologue_key, 0, n - 1)
         return [json.loads(x) for x in raw]
 
+    def log_kernel_event(self, event: dict):
+        """Store a raw daemon kernel event for telemetry."""
+        entry = {"timestamp": time.time(), "event": event}
+        self.r.lpush("kernel_events", json.dumps(entry))
+        self.r.ltrim("kernel_events", 0, 499)
+
+    def log_mitigation(self, pid: int, action: str, result: dict):
+        """Store a mitigation action and its result for telemetry."""
+        entry = {"timestamp": time.time(), "pid": pid, "action": action, "result": result}
+        self.r.lpush("mitigations", json.dumps(entry))
+        self.r.ltrim("mitigations", 0, 499)
+
     def push_metric(self, pid: int, cpu: float, mem: float):
         key = f"metrics:{pid}"
         entry = {"ts": time.time(), "cpu": cpu, "mem": mem}

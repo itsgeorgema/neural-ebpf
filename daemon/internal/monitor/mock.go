@@ -72,15 +72,29 @@ func (m *Monitor) runMockPoller() {
 				}
 
 				// FD anomaly check (Linux only via /proc; skip on macOS gracefully)
-				if p.FDCount >= m.cfg.FDThreshold && !alertedPIDs[-p.PID] {
-					alertedPIDs[-p.PID] = true
+				fdKey := -p.PID
+				if p.FDCount >= m.cfg.FDThreshold {
+					if !alertedPIDs[fdKey] {
+						alertedPIDs[fdKey] = true
+						ev := KernelEvent{
+							ID:        newEventID(),
+							Timestamp: time.Now(),
+							Type:      EventFDAnomaly,
+							PID:       p.PID,
+							Process:   p,
+							Message:   fmt.Sprintf("PID %d (%s) has %d open file descriptors", p.PID, p.Name, p.FDCount),
+						}
+						m.Emit(ev)
+					}
+				} else if alertedPIDs[fdKey] {
+					delete(alertedPIDs, fdKey)
 					ev := KernelEvent{
 						ID:        newEventID(),
 						Timestamp: time.Now(),
-						Type:      EventFDAnomaly,
+						Type:      EventResolved,
 						PID:       p.PID,
 						Process:   p,
-						Message:   fmt.Sprintf("PID %d (%s) has %d open file descriptors", p.PID, p.Name, p.FDCount),
+						Message:   fmt.Sprintf("PID %d (%s) FD count normalized to %d", p.PID, p.Name, p.FDCount),
 					}
 					m.Emit(ev)
 				}
