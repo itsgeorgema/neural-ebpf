@@ -13,11 +13,3 @@ func getProcessName(pid int) string {
 	}
 	return strings.TrimSpace(string(data))
 }
-
-func getFDCount(pid int) int {
-	entries, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", pid))
-	if err != nil {
-		return 0
-	}
-	return len(entries)
-}

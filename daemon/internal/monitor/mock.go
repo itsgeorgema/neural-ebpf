@@ -208,10 +208,8 @@ func parsePSAux() ([]ProcessStats, error) {
 			MemMB:      mem, // this is %MEM from ps, convert if needed
 		}
 
-		// Try to get FD count from /proc (Linux only)
-		p.FDCount = getFDCount(pid)
-
 		procs = append(procs, p)
 	}
+	populateFDCounts(procs)
 	return procs, nil
 }
