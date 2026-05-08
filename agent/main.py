@@ -11,7 +11,6 @@ import time
 
 import httpx
 from dotenv import load_dotenv
-from sseclient import SSEClient
 
 from agent import handle_event
 from redis_store import IncidentStore
@@ -79,41 +78,53 @@ def main():
     while True:
         try:
             with httpx.stream("GET", f"{DAEMON_URL}/events", timeout=None) as resp:
-                client = SSEClient(resp)
-                for event in client.events():
-                    if event.event != "kernel_event":
-                        continue
-                    try:
-                        data = json.loads(event.data)
-                    except json.JSONDecodeError:
-                        continue
-
-                    pid = data.get("pid", 0)
-                    event_type = data.get("type", "")
-
-                    if event_type == "resolved":
-                        active_pids.discard(pid)
-                        log.info("PID %d resolved — removing from active set", pid)
-                        continue
-
-                    # Deduplicate: only handle each PID once at a time
-                    if pid in active_pids:
-                        log.debug("PID %d already being handled, skipping duplicate event", pid)
-                        continue
-
-                    active_pids.add(pid)
-                    log.info("New %s event for PID %d — spawning agent", event_type, pid)
-
-                    # Run agent in a background thread so we don't block the SSE stream
-                    def run_agent(ev=data, p=pid):
+                event_type = ""
+                data_buf = ""
+                for line in resp.iter_lines():
+                    if line.startswith("event:"):
+                        event_type = line[6:].strip()
+                    elif line.startswith("data:"):
+                        data_buf = line[5:].strip()
+                    elif line == "":
+                        if event_type != "kernel_event" or not data_buf:
+                            event_type = ""
+                            data_buf = ""
+                            continue
                         try:
-                            handle_event(ev, store)
-                        except Exception as exc:
-                            log.exception("Agent error for PID %d: %s", p, exc)
-                        finally:
-                            active_pids.discard(p)
+                            data = json.loads(data_buf)
+                        except json.JSONDecodeError:
+                            event_type = ""
+                            data_buf = ""
+                            continue
+                        event_type = ""
+                        data_buf = ""
 
-                    threading.Thread(target=run_agent, daemon=True).start()
+                        pid = data.get("pid", 0)
+                        ev_type = data.get("type", "")
+
+                        if ev_type == "resolved":
+                            active_pids.discard(pid)
+                            log.info("PID %d resolved — removing from active set", pid)
+                            continue
+
+                        # Deduplicate: only handle each PID once at a time
+                        if pid in active_pids:
+                            log.debug("PID %d already being handled, skipping duplicate event", pid)
+                            continue
+
+                        active_pids.add(pid)
+                        log.info("New %s event for PID %d — spawning agent", ev_type, pid)
+
+                        # Run agent in a background thread so we don't block the SSE stream
+                        def run_agent(ev=data, p=pid):
+                            try:
+                                handle_event(ev, store)
+                            except Exception as exc:
+                                log.exception("Agent error for PID %d: %s", p, exc)
+                            finally:
+                                active_pids.discard(p)
+
+                        threading.Thread(target=run_agent, daemon=True).start()
 
         except KeyboardInterrupt:
             log.info("Shutting down agent.")
