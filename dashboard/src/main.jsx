@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -6,6 +6,8 @@ const MAX_POINTS = 72;
 const CPU_THRESHOLD = 50;
 const FD_THRESHOLD = 200;
 const POLL_INTERVAL_MS = 1000;
+const WEB_SCROLL_QUERY = "(min-width: 1051px)";
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 function isSuspectProcess(proc) {
   const name = String(proc.name || "").toLowerCase();
@@ -61,6 +63,69 @@ function useDashboardData() {
   }, []);
 
   return state;
+}
+
+function useWebViewLocomotiveScroll(refreshKey) {
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const webView = window.matchMedia(WEB_SCROLL_QUERY);
+    const reducedMotion = window.matchMedia(REDUCED_MOTION_QUERY);
+    let cancelled = false;
+
+    async function mountScroll() {
+      if (!webView.matches || reducedMotion.matches || scrollRef.current) return;
+
+      const [{ default: LocomotiveScroll }] = await Promise.all([
+        import("locomotive-scroll"),
+        import("locomotive-scroll/dist/locomotive-scroll.css"),
+      ]);
+
+      if (cancelled || !webView.matches || reducedMotion.matches) return;
+
+      document.documentElement.classList.add("web-smooth-scroll");
+      scrollRef.current = new LocomotiveScroll({
+        autoStart: true,
+        lenisOptions: {
+          lerp: 0.08,
+          wheelMultiplier: 0.86,
+          smoothWheel: true,
+        },
+      });
+      requestAnimationFrame(() => scrollRef.current?.resize());
+    }
+
+    function unmountScroll() {
+      document.documentElement.classList.remove("web-smooth-scroll");
+      scrollRef.current?.destroy();
+      scrollRef.current = null;
+    }
+
+    function syncMode() {
+      if (webView.matches && !reducedMotion.matches) {
+        mountScroll();
+      } else {
+        unmountScroll();
+      }
+    }
+
+    syncMode();
+    webView.addEventListener("change", syncMode);
+    reducedMotion.addEventListener("change", syncMode);
+
+    return () => {
+      cancelled = true;
+      webView.removeEventListener("change", syncMode);
+      reducedMotion.removeEventListener("change", syncMode);
+      unmountScroll();
+    };
+  }, []);
+
+  useEffect(() => {
+    requestAnimationFrame(() => scrollRef.current?.resize());
+  }, [refreshKey]);
 }
 
 function buildSample(processes, previousPoint) {
@@ -243,7 +308,7 @@ function Metric({ label, value, live }) {
   return (
     <div className="metric">
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong key={value}>{value}</strong>
       {live !== undefined && <i className={live ? "dot live" : "dot"} />}
     </div>
   );
@@ -301,16 +366,17 @@ function Incidents({ incidents }) {
 
 function App() {
   const { status, processes, monologue, incidents, error } = useDashboardData();
+  useWebViewLocomotiveScroll(`${processes.length}:${monologue.length}:${incidents.length}:${error}`);
 
   return (
-    <main>
-      <header className="hero">
-        <div>
+    <main data-scroll-section>
+      <header className="hero" data-scroll>
+        <div data-scroll data-scroll-speed="0.18">
           <p className="eyebrow">Neural eBPF</p>
           <h1>Surgery Console</h1>
           <p className="lede">Kernel eBPF telemetry, mitigation state, and leak isolation via a kernel agent.</p>
         </div>
-        <div className="hero-terminal">
+        <div className="hero-terminal" data-scroll data-scroll-speed="-0.08">
           <span>watch --cpu --fd --agent</span>
           <b>{status.daemon ? "daemon:linked" : "daemon:waiting"}</b>
         </div>
@@ -318,7 +384,7 @@ function App() {
 
       {error && <div className="error">Dashboard API error: {error}</div>}
 
-      <div className="layout">
+      <div className="layout" data-scroll>
         <aside>
           <Controls status={status} processes={processes} />
           <ProcessList processes={processes} />
