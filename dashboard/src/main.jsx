@@ -216,7 +216,7 @@ function ProcessList({ processes }) {
         </div>
         <span className="count">{processes.length}</span>
       </div>
-      <div className="process-list">
+      <div className="process-list" onWheel={(e) => e.stopPropagation()}>
         {visible.length === 0 && <p className="muted">No process data yet.</p>}
         {visible.map((proc) => (
           <article className={isSuspectProcess(proc) ? "process suspect" : "process"} key={proc.pid}>
@@ -264,6 +264,13 @@ function Controls({ status, processes }) {
       setActiveLeak(null);
     }
   }, [activeLeak, remaining]);
+
+  // Stop the timer early if the leak process was already mitigated by the agent
+  useEffect(() => {
+    if (!activeLeak || elapsed < 5) return;
+    const hasLeakProcess = processes.some((p) => String(p.name || "").toLowerCase().includes("leak"));
+    if (!hasLeakProcess) setActiveLeak(null);
+  }, [processes, activeLeak, elapsed]);
 
   async function trigger(kind) {
     if (!servicesReady) return;
@@ -334,7 +341,7 @@ function Monologue({ entries }) {
           <h2>Monologue stream</h2>
         </div>
       </div>
-      <div className="log-list">
+      <div className="log-list" onWheel={(e) => e.stopPropagation()}>
         {entries.length === 0 && <p className="muted">Trigger a leak to populate the transcript.</p>}
         {entries.map((entry, index) => (
           <article className="log-line" key={`${entry.timestamp}-${index}`}>
@@ -357,7 +364,7 @@ function Incidents({ incidents }) {
           <h2>Incident history</h2>
         </div>
       </div>
-      <div className="incident-list">
+      <div className="incident-list" onWheel={(e) => e.stopPropagation()}>
         {incidents.length === 0 && <p className="muted">No resolved incidents yet.</p>}
         {incidents.map((incident, index) => {
           const event = incident.event || {};
