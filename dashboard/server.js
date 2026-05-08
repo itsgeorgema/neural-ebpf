@@ -50,6 +50,7 @@ app.get("/api/status", async (_req, res) => {
   ]);
   res.json({
     daemon: Boolean(health),
+    daemon_mode: health?.mode || null,
     redis: redisOk,
     cpu_cores: Number(health?.cpu_cores) || null,
   });
@@ -78,6 +79,22 @@ app.get("/api/incidents", async (req, res) => {
     if (raw) incidents.push(JSON.parse(raw));
   }
   res.json(incidents);
+});
+
+app.post("/api/clear", async (_req, res) => {
+  if (!(await redisPing())) return res.status(503).json({ error: "redis offline" });
+  const patterns = ["monologue", "incidents", "kernel_events", "mitigations"];
+  for (const key of patterns) await redis.del(key);
+  // Delete all incident:* and metrics:* keys
+  for (const pattern of ["incident:*", "metrics:*"]) {
+    let cursor = "0";
+    do {
+      const [next, keys] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 200);
+      cursor = next;
+      if (keys.length) await redis.del(...keys);
+    } while (cursor !== "0");
+  }
+  res.json({ ok: true });
 });
 
 app.get("/api/metrics/:pid", async (req, res) => {

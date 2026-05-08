@@ -45,10 +45,15 @@ func (s *Server) routes() {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	mode := "ebpf"
+	if s.mon.IsMock() {
+		mode = "mock"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":    "ok",
 		"time":      time.Now().Format(time.RFC3339),
 		"cpu_cores": runtime.NumCPU(),
+		"mode":      mode,
 	})
 }
 

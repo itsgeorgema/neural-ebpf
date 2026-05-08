@@ -398,6 +398,26 @@ input[type="range"]::-moz-range-thumb {
   margin-top: 16px;
 }
 
+.btn-full {
+  grid-column: 1 / -1;
+}
+
+.btn-ghost {
+  min-height: 34px;
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.btn-ghost:hover {
+  background: rgba(229, 226, 214, 0.05);
+  color: var(--text);
+  box-shadow: none;
+}
+
 button {
   min-height: 44px;
   border: 1px solid var(--line);

@@ -119,6 +119,10 @@ func (m *Monitor) Mitigate(req MitigationRequest) MitigationResult {
 	}
 }
 
+func (m *Monitor) IsMock() bool {
+	return m.cfg.Mock
+}
+
 func (m *Monitor) Emit(ev KernelEvent) {
 	select {
 	case m.events <- ev:

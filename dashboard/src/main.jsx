@@ -34,6 +34,17 @@ function systemCpuPercent(processCpuPercent, cores) {
   return Math.min(100, Math.max(0, processCpuPercent / normalizedCores));
 }
 
+const PULSE_MS = 1800;
+
+function usePulseSync() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => (t + 1) % 100), PULSE_MS);
+    return () => clearInterval(id);
+  }, []);
+  return tick;
+}
+
 function useDashboardData() {
   const [state, setState] = useState({
     status: { daemon: false, redis: false, cpu_cores: null },
@@ -236,14 +247,26 @@ function ProcessList({ processes }) {
   );
 }
 
-function Controls({ status, processes, incidents }) {
+function agentStatus(monologue) {
+  if (!monologue.length) return { label: "idle", live: false };
+  const latest = monologue[0];
+  const age = Date.now() / 1000 - (latest.timestamp || 0);
+  const phase = (latest.phase || "").toUpperCase();
+  if (phase === "FAILED") return { label: "failed", live: false };
+  if (age > 45) return { label: "idle", live: false };
+  if (phase === "RESOLVED") return { label: "resolved", live: true };
+  if (["ANALYZING", "EXECUTING", "VERIFYING"].includes(phase)) return { label: "active", live: true };
+  return { label: "idle", live: false };
+}
+
+function Controls({ status, processes, incidents, monologue, pulseTick }) {
   const [duration, setDuration] = useState(45);
   const [activeLeak, setActiveLeak] = useState(null);
   const [now, setNow] = useState(Date.now());
   const totalCpuRaw = processes.reduce((sum, proc) => sum + proc.cpu_percent, 0);
   const systemCpu = systemCpuPercent(totalCpuRaw, status.cpu_cores);
-  const maxProcCpu = processes.length === 0 ? null : Math.max(0, ...processes.map((proc) => proc.cpu_percent));
   const suspects = processes.filter(isSuspectProcess).length;
+  const agent = agentStatus(monologue);
   const elapsed = activeLeak ? Math.floor((now - activeLeak.startedAt) / 1000) : 0;
   const remaining = activeLeak ? Math.max(0, activeLeak.duration - elapsed) : 0;
 
@@ -288,12 +311,12 @@ function Controls({ status, processes, incidents }) {
   return (
     <section className="panel control-panel">
       <div className="status-grid">
-        <Metric label="daemon" value={status.daemon ? "online" : "offline"} live={status.daemon} />
-        <Metric label="redis" value={status.redis ? "online" : "offline"} live={status.redis} />
+        <Metric label="daemon" value={status.daemon ? (status.daemon_mode || "online") : "offline"} live={status.daemon} pulseTick={pulseTick} />
+        <Metric label="redis" value={status.redis ? (monologue.length === 0 ? "empty" : "online") : "offline"} live={status.redis} pulseTick={pulseTick} />
+        <Metric label="agent" value={agent.label} live={agent.live} pulseTick={pulseTick} />
         <Metric label="cpu cores" value={status.cpu_cores ?? "--"} />
-        <Metric label="suspects" value={suspects} />
         <Metric label="system cpu" value={systemCpu === null ? "--" : `${systemCpu.toFixed(1)}%`} />
-        <Metric label="max proc" value={maxProcCpu === null ? "--" : `${maxProcCpu.toFixed(1)}%`} />
+        <Metric label="suspects" value={suspects} />
       </div>
       <label className="range-label" htmlFor="duration">Leak duration <span>{duration}s</span></label>
       <input
@@ -309,6 +332,9 @@ function Controls({ status, processes, incidents }) {
       <div className="button-row">
         <button disabled={!servicesReady} onClick={() => trigger("cpu")}>CPU leak</button>
         <button disabled={!servicesReady} onClick={() => trigger("fd")}>FD leak</button>
+        <button className="btn-full btn-ghost" disabled={!status.redis} onClick={async () => {
+          await fetch("/api/clear", { method: "POST" });
+        }}>Clear logs</button>
       </div>
       {!servicesReady && (
         <p className="offline-notice">{offlineReason} — leak triggers disabled</p>
@@ -324,12 +350,14 @@ function Controls({ status, processes, incidents }) {
   );
 }
 
-function Metric({ label, value, live }) {
+function Metric({ label, value, live, pulseTick }) {
   return (
     <div className="metric">
       <span>{label}</span>
       <strong key={value}>{value}</strong>
-      {live !== undefined && <i className={live ? "dot live" : "dot"} />}
+      {live !== undefined && (
+        <i key={live ? pulseTick : "off"} className={live ? "dot live" : "dot"} />
+      )}
     </div>
   );
 }
@@ -386,6 +414,7 @@ function Incidents({ incidents }) {
 
 function App() {
   const { status, processes, monologue, incidents, error } = useDashboardData();
+  const pulseTick = usePulseSync();
   useWebViewLocomotiveScroll(`${processes.length}:${monologue.length}:${incidents.length}:${error}`);
 
   return (
@@ -406,7 +435,7 @@ function App() {
 
       <div className="layout" data-scroll>
         <aside>
-          <Controls status={status} processes={processes} incidents={incidents} />
+          <Controls status={status} processes={processes} incidents={incidents} monologue={monologue} pulseTick={pulseTick} />
           <ProcessList processes={processes} />
         </aside>
         <div className="main-column">
