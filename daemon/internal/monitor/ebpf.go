@@ -96,7 +96,7 @@ func (m *Monitor) runEBPF() {
 		m.procMu.Unlock()
 
 		if stats.CPUPercent >= m.cfg.CPUThreshold {
-			m.Emit(KernelEvent{
+			kev := KernelEvent{
 				ID:        newEventID(),
 				Timestamp: time.Now(),
 				Type:      EventCPUAnomaly,
@@ -104,7 +104,9 @@ func (m *Monitor) runEBPF() {
 				Process:   stats,
 				Message: fmt.Sprintf("[eBPF] PID %d (%s) exceeded CPU threshold: %.1f%%",
 					ev.PID, name, stats.CPUPercent),
-			})
+			}
+			kev.ProcessClass, kev.AnomalyType = ClassifyProcess(&kev)
+			m.Emit(kev)
 		}
 	}
 }

@@ -26,12 +26,14 @@ type ProcessStats struct {
 }
 
 type KernelEvent struct {
-	ID        string       `json:"id"`
-	Timestamp time.Time    `json:"timestamp"`
-	Type      EventType    `json:"type"`
-	PID       int          `json:"pid"`
-	Process   ProcessStats `json:"process"`
-	Message   string       `json:"message"`
+	ID           string       `json:"id"`
+	Timestamp    time.Time    `json:"timestamp"`
+	Type         EventType    `json:"type"`
+	PID          int          `json:"pid"`
+	Process      ProcessStats `json:"process"`
+	Message      string       `json:"message"`
+	ProcessClass ProcessClass `json:"process_class,omitempty"`
+	AnomalyType  AnomalyKind  `json:"anomaly_type,omitempty"`
 }
 
 type MitigationAction string

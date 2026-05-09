@@ -17,50 +17,6 @@ from redis_store import IncidentStore
 
 
 # ---------------------------------------------------------------------------
-# Process classification
-# ---------------------------------------------------------------------------
-
-_LEAK_KEYWORDS = {"leak", "stress", "flood", "spike", "burn", "bomb", "bench", "fuzz"}
-_SYSTEM_SERVICE_PREFIXES = {
-    "nginx", "apache", "httpd", "postgres", "mysql", "mysqld", "redis",
-    "memcached", "elastic", "kafka", "zookeeper", "systemd", "init",
-    "launchd", "dockerd", "kubelet", "mongod", "etcd", "consul", "java",
-}
-_SCRIPT_INTERPRETERS = {"python", "python3", "python2", "bash", "sh", "zsh", "fish", "node", "ruby", "perl"}
-
-
-def classify_process(event: dict) -> tuple[str, str]:
-    """Return (process_class, anomaly_type) for a kernel event.
-
-    process_class: leak_simulator | user_script | system_service | unknown
-    anomaly_type:  cpu | fd | both
-    """
-    proc = event.get("process") or {}
-    name = (proc.get("name") or "").lower()
-    cmd_line = (proc.get("cmd_line") or "").lower()
-    pid = int(event.get("pid") or 0)
-    event_type = str(event.get("type") or "")
-
-    anomaly_type = "fd" if event_type == "fd_anomaly" else "cpu"
-
-    combined = f"{name} {cmd_line}"
-
-    # Confirmed test/leak script
-    if any(kw in combined for kw in _LEAK_KEYWORDS):
-        return "leak_simulator", anomaly_type
-
-    # Known system service by name or low PID
-    if 0 < pid < 500 or any(name.startswith(s) for s in _SYSTEM_SERVICE_PREFIXES):
-        return "system_service", anomaly_type
-
-    # Script interpreter → user script
-    if any(name == s or name.startswith(s) for s in _SCRIPT_INTERPRETERS):
-        return "user_script", anomaly_type
-
-    return "unknown", anomaly_type
-
-
-# ---------------------------------------------------------------------------
 # System prompt — encodes the full decision matrix
 # ---------------------------------------------------------------------------
 
@@ -197,8 +153,9 @@ def build_graph(store: IncidentStore, model_name: str = "gpt-5.4") -> StateGraph
             log(state, "ANALYZING", response.content or "(analyzing)")
             return {"messages": [response], "phase": "ANALYZING"}
 
-        # First pass: classify, log the alert, ask LLM to call get_processes
-        proc_class, anomaly_type = classify_process(event)
+        # First pass: read classification stamped by the Go daemon on the event
+        proc_class = event.get("process_class") or "unknown"
+        anomaly_type = event.get("anomaly_type") or "cpu"
 
         log(state, "ANALYZING",
             f"Kernel alert: {event.get('message')} | "

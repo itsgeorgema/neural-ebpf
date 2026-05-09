@@ -53,6 +53,7 @@ func (m *Monitor) runMockPoller() {
 							Message: fmt.Sprintf("PID %d (%s) consuming %.1f%% CPU for %d consecutive seconds",
 								p.PID, p.Name, p.CPUPercent, highCPUCount[p.PID]),
 						}
+						ev.ProcessClass, ev.AnomalyType = ClassifyProcess(&ev)
 						log.Printf("[mock] ALERT: %s", ev.Message)
 						m.Emit(ev)
 						// Arm watchdog deadline if configured
@@ -93,6 +94,7 @@ func (m *Monitor) runMockPoller() {
 							Process:   p,
 							Message:   fmt.Sprintf("PID %d (%s) has %d open file descriptors", p.PID, p.Name, p.FDCount),
 						}
+						ev.ProcessClass, ev.AnomalyType = ClassifyProcess(&ev)
 						m.Emit(ev)
 					}
 				} else if alertedPIDs[fdKey] {
