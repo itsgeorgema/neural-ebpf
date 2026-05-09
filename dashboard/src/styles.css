@@ -369,6 +369,10 @@ dt,
   display: inline-block;
 }
 
+.metric strong.value-tick {
+  animation: value-tick 360ms var(--ease-out) both;
+}
+
 .dot {
   position: absolute;
   right: 12px;

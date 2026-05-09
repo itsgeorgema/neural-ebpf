@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useLayoutEffect, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -385,10 +385,24 @@ function Metric({ label, value, live, indicator, pulseTick }) {
   const state = indicator || (live === undefined ? "" : live ? "live" : "offline");
   const stateClass = state ? ` metric-${state}` : "";
   const dotClass = state ? `dot ${state}` : "dot";
+  const valueRef = useRef(null);
+  const previousValue = useRef();
+
+  useLayoutEffect(() => {
+    if (previousValue.current === value) return;
+    previousValue.current = value;
+
+    const node = valueRef.current;
+    if (!node) return;
+    node.classList.remove("value-tick");
+    void node.offsetWidth;
+    node.classList.add("value-tick");
+  }, [value]);
+
   return (
     <div className={`metric${stateClass}`}>
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong ref={valueRef}>{value}</strong>
       {live !== undefined && (
         <i key={state === "live" ? pulseTick : state} className={dotClass} />
       )}
