@@ -367,7 +367,6 @@ dt,
 .metric strong {
   font-size: 1.18rem;
   display: inline-block;
-  animation: value-tick 360ms var(--ease-out) both;
 }
 
 .dot {
@@ -377,11 +376,21 @@ dt,
   width: 8px;
   height: 8px;
   background: var(--warn);
+  opacity: 1;
 }
 
 .dot.live {
   background: var(--ok);
   animation: pulse 1.8s ease-in-out infinite;
+}
+
+.dot.idle {
+  background: var(--warn);
+}
+
+.dot.offline {
+  background: var(--muted);
+  opacity: 0.55;
 }
 
 .range-label {

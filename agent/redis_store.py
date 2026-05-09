@@ -68,7 +68,7 @@ class IncidentStore:
 
     def heartbeat(self):
         """Write a short-lived key so the dashboard can detect the agent is running."""
-        self.r.set("agent:heartbeat", int(time.time()), ex=15)
+        self.r.set("agent:heartbeat", int(time.time()), ex=3)
 
     def ping(self) -> bool:
         try:

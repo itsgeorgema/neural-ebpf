@@ -92,7 +92,7 @@ function fallbackIncidentFromMitigation(mitigation, kernelEvents) {
 app.get("/api/status", async (_req, res) => {
   const [redisOk, health] = await Promise.all([
     redisPing(),
-    daemonFetch("/health").catch(() => null),
+    daemonFetch("/health", { signal: AbortSignal.timeout(800) }).catch(() => null),
   ]);
   let agentOnline = false;
   if (redisOk) {

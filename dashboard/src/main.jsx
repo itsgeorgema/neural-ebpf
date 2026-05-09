@@ -59,8 +59,10 @@ function useDashboardData() {
 
   useEffect(() => {
     let cancelled = false;
+    let requestSeq = 0;
 
     async function load() {
+      const seq = ++requestSeq;
       try {
         const [status, processes, monologue, incidents] = await Promise.all([
           fetch("/api/status").then((r) => r.json()),
@@ -68,9 +70,9 @@ function useDashboardData() {
           fetch("/api/monologue?n=30").then((r) => r.json()),
           fetch("/api/incidents?n=10").then((r) => r.json()),
         ]);
-        if (!cancelled) setState({ status, processes, monologue, incidents, error: "" });
+        if (!cancelled && seq === requestSeq) setState({ status, processes, monologue, incidents, error: "" });
       } catch (error) {
-        if (!cancelled) setState((current) => ({ ...current, error: error.message }));
+        if (!cancelled && seq === requestSeq) setState((current) => ({ ...current, error: error.message }));
       }
     }
 
@@ -275,16 +277,16 @@ function ProcessList({ processes, incidents }) {
 }
 
 function agentStatus(monologue, agentOnline) {
-  if (!agentOnline) return { label: "offline", live: false };
-  if (!monologue.length) return { label: "idle", live: true };
+  if (!agentOnline) return { label: "offline", live: false, indicator: "offline" };
+  if (!monologue.length) return { label: "idle", live: true, indicator: "idle" };
   const latest = monologue[0];
   const age = Date.now() / 1000 - (latest.timestamp || 0);
   const phase = (latest.phase || "").toUpperCase();
-  if (phase === "FAILED") return { label: "failed", live: true };
-  if (age > 45) return { label: "idle", live: true };
-  if (phase === "RESOLVED") return { label: "resolved", live: true };
-  if (["ANALYZING", "EXECUTING", "VERIFYING"].includes(phase)) return { label: "active", live: true };
-  return { label: "idle", live: true };
+  if (phase === "FAILED") return { label: "failed", live: true, indicator: "idle" };
+  if (age > 45) return { label: "idle", live: true, indicator: "idle" };
+  if (phase === "RESOLVED") return { label: "resolved", live: true, indicator: "live" };
+  if (["ANALYZING", "EXECUTING", "VERIFYING"].includes(phase)) return { label: "active", live: true, indicator: "live" };
+  return { label: "idle", live: true, indicator: "idle" };
 }
 
 function Controls({ status, processes, incidents, monologue, pulseTick }) {
@@ -341,7 +343,7 @@ function Controls({ status, processes, incidents, monologue, pulseTick }) {
       <div className="status-grid">
         <Metric label="daemon" value={status.daemon ? (status.daemon_mode || "online") : "offline"} live={status.daemon} pulseTick={pulseTick} />
         <Metric label="redis" value={status.redis ? (monologue.length === 0 ? "empty" : "online") : "offline"} live={status.redis} pulseTick={pulseTick} />
-        <Metric label="agent" value={agent.label} live={agent.live} pulseTick={pulseTick} />
+        <Metric label="agent" value={agent.label} live={agent.live} indicator={agent.indicator} pulseTick={pulseTick} />
         <Metric label="cpu cores" value={status.cpu_cores ?? "--"} />
         <Metric label="system cpu" value={systemCpu === null ? "--" : `${systemCpu.toFixed(1)}%`} />
         <Metric label="suspects" value={suspects} />
@@ -378,13 +380,16 @@ function Controls({ status, processes, incidents, monologue, pulseTick }) {
   );
 }
 
-function Metric({ label, value, live, pulseTick }) {
+function Metric({ label, value, live, indicator, pulseTick }) {
+  const state = indicator || (live === undefined ? "" : live ? "live" : "offline");
+  const stateClass = state ? ` metric-${state}` : "";
+  const dotClass = state ? `dot ${state}` : "dot";
   return (
-    <div className="metric">
+    <div className={`metric${stateClass}`}>
       <span>{label}</span>
-      <strong key={value}>{value}</strong>
+      <strong>{value}</strong>
       {live !== undefined && (
-        <i key={live ? pulseTick : "off"} className={live ? "dot live" : "dot"} />
+        <i key={state === "live" ? pulseTick : state} className={dotClass} />
       )}
     </div>
   );
