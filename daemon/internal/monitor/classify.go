@@ -42,10 +42,25 @@ var leakKeywords = []string{
 }
 
 // systemServicePrefixes are name prefixes that identify known production daemons.
+// Includes common macOS system processes that legitimately run at high CPU.
 var systemServicePrefixes = []string{
+	// Linux/cross-platform services
 	"nginx", "apache", "httpd", "postgres", "mysql", "mysqld", "redis",
 	"memcached", "elastic", "kafka", "zookeeper", "systemd", "init",
-	"launchd", "dockerd", "kubelet", "mongod", "etcd", "consul", "java",
+	"dockerd", "kubelet", "mongod", "etcd", "consul", "java",
+	// macOS system daemons — these run hot by design and must never be killed
+	"WindowServer", "windowserver",
+	"mds", "mdworker",        // Spotlight indexing
+	"coreaudiod",             // Core Audio
+	"launchd", "launchservicesd",
+	"logd",                   // unified logging
+	"configd",                // system configuration
+	"notifyd",                // Darwin notifications
+	"diskarbitrationd",       // disk events
+	"hidd",                   // HID / input events
+	"cfprefsd",               // CoreFoundation preferences
+	"opendirectoryd",         // directory services
+	"kernel_task",            // macOS CPU thermal management proxy
 }
 
 // scriptInterpreters are process names that indicate a user-level script runner.

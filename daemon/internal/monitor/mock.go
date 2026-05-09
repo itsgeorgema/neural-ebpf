@@ -5,10 +5,39 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// cpuHistoryWindow is the number of 1-second poll samples retained per PID.
+// 30 samples = 30 seconds of history used to compute the per-process baseline.
+const cpuHistoryWindow = 30
+
+// isCPUSpike returns true when current CPU represents a genuine anomaly rather
+// than a process's normal operating level.
+//
+// Algorithm: sort the recent history and take the 20th percentile as the
+// process's "quiet baseline". Alert only if the current reading exceeds that
+// baseline by at least spikerDelta percentage points.
+//
+// Examples with spikerDelta=30:
+//   - WindowServer stable at 50%:  baseline≈50%, delta=0  → false (no alert)
+//   - WindowServer spikes to 95%:  baseline≈50%, delta=45 → true  (alert)
+//   - leak script  0%→90%:         baseline≈2%,  delta=88 → true  (alert)
+//
+// If fewer than 5 samples exist (new process), falls back to pure threshold.
+func isCPUSpike(history []float64, current, spikerDelta float64) bool {
+	if len(history) < 5 {
+		return true // not enough history — trust the raw threshold
+	}
+	sorted := make([]float64, len(history))
+	copy(sorted, history)
+	sort.Float64s(sorted)
+	baseline := sorted[len(sorted)/5] // 20th percentile
+	return current >= baseline+spikerDelta
+}
 
 // runMockPoller polls `ps aux` every second to detect anomalies.
 // Works on macOS and Linux without any kernel privileges.
@@ -18,8 +47,15 @@ func (m *Monitor) runMockPoller() {
 	// Track consecutive high-CPU seconds per PID to avoid alert storms
 	highCPUCount := make(map[int]int)
 	alertedPIDs := make(map[int]bool)
+	// cpuHistory[pid] = rolling window of recent CPU% readings for baseline computation
+	cpuHistory := make(map[int][]float64)
 	// watchdogDeadlines[pid] = time after which the daemon force-kills if still anomalous
 	watchdogDeadlines := make(map[int]time.Time)
+
+	spikerDelta := m.cfg.CPUSpikerDelta
+	if spikerDelta <= 0 {
+		spikerDelta = 30.0
+	}
 
 	for {
 		select {
@@ -39,10 +75,30 @@ func (m *Monitor) runMockPoller() {
 			m.procMu.Unlock()
 
 			for _, p := range procs {
+				// Always update the rolling history so the baseline stays current.
+				h := cpuHistory[p.PID]
+				h = append(h, p.CPUPercent)
+				if len(h) > cpuHistoryWindow {
+					h = h[len(h)-cpuHistoryWindow:]
+				}
+				cpuHistory[p.PID] = h
+
 				if p.CPUPercent >= m.cfg.CPUThreshold {
 					highCPUCount[p.PID]++
 					// Alert after 3 consecutive high-CPU seconds
 					if highCPUCount[p.PID] >= 3 && !alertedPIDs[p.PID] {
+						// Classify before deciding whether to alert.
+						tmpEv := KernelEvent{PID: p.PID, Process: p, Type: EventCPUAnomaly}
+						procClass, _ := ClassifyProcess(&tmpEv)
+
+						// Baseline spike gate — skip if this is just the process's normal level.
+						// Leak simulators are exempt: alert immediately (no benefit of the doubt).
+						if procClass != ClassLeakSimulator && !isCPUSpike(h, p.CPUPercent, spikerDelta) {
+							log.Printf("[mock] suppressed alert for PID %d (%s) at %.1f%% — within normal baseline (class=%s)",
+								p.PID, p.Name, p.CPUPercent, procClass)
+							continue
+						}
+
 						alertedPIDs[p.PID] = true
 						ev := KernelEvent{
 							ID:        newEventID(),
@@ -149,23 +205,21 @@ func (m *Monitor) runMockPoller() {
 				highCPUCount[pid] = 0
 			}
 
-			// Cleanup PIDs that no longer exist
+			// Cleanup state for PIDs that no longer exist.
+			livePIDs := make(map[int]bool, len(procs))
+			for _, p := range procs {
+				livePIDs[p.PID] = true
+			}
 			for pid := range alertedPIDs {
 				absPID := pid
 				if absPID < 0 {
 					absPID = -pid
 				}
-				found := false
-				for _, p := range procs {
-					if p.PID == absPID {
-						found = true
-						break
-					}
-				}
-				if !found {
+				if !livePIDs[absPID] {
 					delete(alertedPIDs, pid)
 					delete(highCPUCount, pid)
 					delete(watchdogDeadlines, pid)
+					delete(cpuHistory, pid)
 				}
 			}
 

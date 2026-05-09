@@ -13,6 +13,11 @@ type Config struct {
 	CPUThreshold    float64
 	FDThreshold     int
 	WatchdogTimeout time.Duration // 0 = disabled
+	// CPUSpikerDelta is the minimum percentage-point rise above a process's
+	// rolling 30-second baseline required to fire a CPU anomaly alert.
+	// Prevents false positives from processes that legitimately run hot (e.g. WindowServer).
+	// Default: 30.0 (alert only if CPU rose ≥30pp above the process's own normal level).
+	CPUSpikerDelta float64
 }
 
 type Monitor struct {

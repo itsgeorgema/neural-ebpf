@@ -18,6 +18,7 @@ func main() {
 	cpuThreshold := flag.Float64("cpu-threshold", 80.0, "CPU% threshold to trigger alert")
 	fdThreshold := flag.Int("fd-threshold", 200, "Open FD count threshold to trigger alert")
 	watchdogTimeout := flag.Int("watchdog-timeout", 0, "Seconds before daemon force-kills unmitigated process (0=disabled, overridable via POST /watchdog)")
+	cpuSpikerDelta := flag.Float64("cpu-spike-delta", 30.0, "Min percentage-point rise above a process's rolling baseline to fire an alert (suppresses false positives from processes that normally run hot)")
 	flag.Parse()
 
 	mon := monitor.New(monitor.Config{
@@ -25,6 +26,7 @@ func main() {
 		CPUThreshold:    *cpuThreshold,
 		FDThreshold:     *fdThreshold,
 		WatchdogTimeout: time.Duration(*watchdogTimeout) * time.Second,
+		CPUSpikerDelta:  *cpuSpikerDelta,
 	})
 
 	srv := api.New(mon, *port)
