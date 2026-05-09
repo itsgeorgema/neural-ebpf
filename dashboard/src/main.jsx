@@ -238,7 +238,7 @@ function ProcessList({ processes, incidents }) {
   const visible = [...suspects.slice(0, 4), ...mitigated.slice(0, 2), ...standard.slice(0, 8)];
 
   return (
-    <section className="panel">
+    <section className="panel stream-panel process-panel">
       <div className="section-heading compact">
         <div>
           <p className="eyebrow">Process field</p>
@@ -388,7 +388,7 @@ function Metric({ label, value, live, pulseTick }) {
 
 function Monologue({ entries }) {
   return (
-    <section className="panel log-panel">
+    <section className="panel stream-panel log-panel">
       <div className="section-heading compact">
         <div>
           <p className="eyebrow">Agent transcript</p>
@@ -411,7 +411,7 @@ function Monologue({ entries }) {
 
 function Incidents({ incidents }) {
   return (
-    <section className="panel incidents-panel">
+    <section className="panel stream-panel incidents-panel">
       <div className="section-heading compact">
         <div>
           <p className="eyebrow">Resolved</p>

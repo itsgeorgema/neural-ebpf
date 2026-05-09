@@ -12,6 +12,8 @@
   --leak: #c77855;
   --ok: #8ca981;
   --warn: #d5b56e;
+  --top-panel-height: clamp(470px, 48vh, 540px);
+  --stream-panel-height: clamp(680px, 78vh, 920px);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-snap: cubic-bezier(0.2, 0.9, 0.2, 1);
 }
@@ -157,15 +159,18 @@ h2 {
 .layout {
   display: grid;
   grid-template-columns: 330px minmax(0, 1fr);
+  grid-template-rows: var(--top-panel-height) var(--stream-panel-height);
+  grid-template-areas:
+    "controls graph"
+    "process lower";
   gap: 24px;
   padding-top: 24px;
+  align-items: stretch;
 }
 
 aside,
 .main-column {
-  display: grid;
-  gap: 24px;
-  align-content: start;
+  display: contents;
 }
 
 .panel {
@@ -248,6 +253,28 @@ aside .panel:nth-child(2) {
 .chart-wrap {
   position: relative;
   min-height: 286px;
+}
+
+.graph-panel {
+  grid-area: graph;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.graph-panel .chart-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  align-items: center;
+}
+
+.control-panel {
+  grid-area: controls;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
 }
 
 svg {
@@ -507,6 +534,51 @@ input[type="range"]:disabled {
   gap: 10px;
 }
 
+.stream-panel {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.process-panel {
+  grid-area: process;
+}
+
+.stream-panel .section-heading {
+  flex: 0 0 auto;
+}
+
+.stream-panel .process-list,
+.stream-panel .log-list,
+.stream-panel .incident-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-color: rgba(229, 226, 214, 0.22) transparent;
+}
+
+.stream-panel .process-list::-webkit-scrollbar,
+.stream-panel .log-list::-webkit-scrollbar,
+.stream-panel .incident-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.stream-panel .process-list::-webkit-scrollbar-thumb,
+.stream-panel .log-list::-webkit-scrollbar-thumb,
+.stream-panel .incident-list::-webkit-scrollbar-thumb {
+  background: rgba(229, 226, 214, 0.18);
+  border: 2px solid rgba(23, 25, 21, 0.92);
+}
+
+.stream-panel .process-list::-webkit-scrollbar-thumb:hover,
+.stream-panel .log-list::-webkit-scrollbar-thumb:hover,
+.stream-panel .incident-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(229, 226, 214, 0.28);
+}
+
 .process {
   display: grid;
   gap: 12px;
@@ -568,15 +640,12 @@ dd {
 }
 
 .lower-grid {
+  grid-area: lower;
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
   gap: 24px;
-}
-
-.log-list {
-  max-height: 360px;
-  overflow: auto;
-  padding-right: 4px;
+  min-height: 0;
+  height: 100%;
 }
 
 .log-line {
@@ -688,8 +757,43 @@ dd {
     grid-template-columns: 1fr;
   }
 
+  .layout {
+    grid-template-rows: auto;
+    grid-template-areas: none;
+  }
+
+  aside,
+  .main-column {
+    display: grid;
+    gap: 24px;
+    align-content: start;
+  }
+
   .hero-terminal {
     min-height: 92px;
+  }
+
+  .graph-panel,
+  .control-panel {
+    grid-area: auto;
+    min-height: auto;
+    max-height: none;
+    height: auto;
+  }
+
+  .control-panel {
+    overflow: visible;
+  }
+
+  .process-panel,
+  .lower-grid {
+    grid-area: auto;
+  }
+
+  .stream-panel {
+    min-height: 420px;
+    max-height: 620px;
+    height: auto;
   }
 }
 
@@ -717,6 +821,11 @@ dd {
   .log-line {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+
+  .stream-panel {
+    min-height: 360px;
+    max-height: 520px;
   }
 }
 
