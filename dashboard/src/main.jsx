@@ -300,12 +300,13 @@ function Controls({ status, processes, incidents, monologue, pulseTick }) {
   const elapsed = activeLeak ? Math.floor((now - activeLeak.startedAt) / 1000) : 0;
   const remaining = activeLeak ? Math.max(0, activeLeak.duration - elapsed) : 0;
 
-  const servicesReady = status.daemon && status.redis;
-  const offlineReason = !status.daemon && !status.redis
-    ? "daemon + redis offline"
-    : !status.daemon
-    ? "daemon offline"
-    : "redis offline";
+  const offlineServices = [
+    !status.daemon && "daemon",
+    !status.redis && "redis",
+    !status.agent && "agent",
+  ].filter(Boolean);
+  const servicesReady = offlineServices.length === 0;
+  const offlineReason = `${offlineServices.join(" + ")} offline`;
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), POLL_INTERVAL_MS);
