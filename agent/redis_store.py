@@ -66,6 +66,10 @@ class IncidentStore:
         raw = self.r.lrange(key, 0, n - 1)
         return [json.loads(x) for x in reversed(raw)]
 
+    def heartbeat(self):
+        """Write a short-lived key so the dashboard can detect the agent is running."""
+        self.r.set("agent:heartbeat", int(time.time()), ex=15)
+
     def ping(self) -> bool:
         try:
             return self.r.ping()

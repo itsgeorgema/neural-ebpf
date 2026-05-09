@@ -43,15 +43,68 @@ async function readJsonList(key, count) {
   return raw.map((item) => JSON.parse(item));
 }
 
+function activityTime(entry) {
+  return Number(entry?.timestamp || 0);
+}
+
+function kernelEventToLog(entry) {
+  const event = entry.event || {};
+  const process = event.process || {};
+  return {
+    timestamp: activityTime(entry),
+    phase: "KERNEL",
+    pid: event.pid,
+    process: process.name || "unknown",
+    content: event.message || `${event.type || "event"} for PID ${event.pid || "n/a"}`,
+  };
+}
+
+function mitigationToLog(entry) {
+  const result = entry.result || {};
+  const action = entry.action || result.action || "mitigation";
+  const status = result.success === false ? "failed" : "completed";
+  return {
+    timestamp: activityTime(entry),
+    phase: "MITIGATING",
+    pid: entry.pid,
+    process: "daemon",
+    content: `${action} ${status} for PID ${entry.pid || "n/a"}: ${result.message || "no result message"}`,
+  };
+}
+
+function fallbackIncidentFromMitigation(mitigation, kernelEvents) {
+  const result = mitigation.result || {};
+  if (!mitigation.pid || result.success === false) return null;
+  const eventEntry = kernelEvents
+    .filter((entry) => entry.event?.pid === mitigation.pid)
+    .sort((a, b) => Math.abs(activityTime(a) - activityTime(mitigation)) - Math.abs(activityTime(b) - activityTime(mitigation)))[0];
+  if (!eventEntry?.event) return null;
+  return {
+    event: eventEntry.event,
+    resolution: "mitigated",
+    attempts: 1,
+    process_class: eventEntry.event.process_class || "unknown",
+    anomaly_type: eventEntry.event.anomaly_type || "unknown",
+    timestamp: activityTime(mitigation),
+  };
+}
+
 app.get("/api/status", async (_req, res) => {
   const [redisOk, health] = await Promise.all([
     redisPing(),
     daemonFetch("/health").catch(() => null),
   ]);
+  let agentOnline = false;
+  if (redisOk) {
+    try {
+      agentOnline = Boolean(await redis.get("agent:heartbeat"));
+    } catch { /* ignore */ }
+  }
   res.json({
     daemon: Boolean(health),
     daemon_mode: health?.mode || null,
     redis: redisOk,
+    agent: agentOnline,
     cpu_cores: Number(health?.cpu_cores) || null,
   });
 });
@@ -66,7 +119,21 @@ app.get("/api/processes", async (_req, res) => {
 
 app.get("/api/monologue", async (req, res) => {
   const count = Number(req.query.n || 30);
-  res.json(await readJsonList("monologue", count));
+  if (!(await redisPing())) return res.json([]);
+  const [monologue, kernelEvents, mitigations] = await Promise.all([
+    readJsonList("monologue", count),
+    readJsonList("kernel_events", count),
+    readJsonList("mitigations", count),
+  ]);
+  const activity = [
+    ...monologue,
+    ...kernelEvents.map(kernelEventToLog),
+    ...mitigations.map(mitigationToLog),
+  ]
+    .filter((entry) => activityTime(entry) > 0)
+    .sort((a, b) => activityTime(b) - activityTime(a))
+    .slice(0, count);
+  res.json(activity);
 });
 
 app.get("/api/incidents", async (req, res) => {
@@ -78,7 +145,20 @@ app.get("/api/incidents", async (req, res) => {
     const raw = await redis.hget(id, "data");
     if (raw) incidents.push(JSON.parse(raw));
   }
-  res.json(incidents);
+  const savedPids = new Set(incidents.map((incident) => incident.event?.pid).filter(Boolean));
+  const [kernelEvents, mitigations] = await Promise.all([
+    readJsonList("kernel_events", count * 3),
+    readJsonList("mitigations", count * 3),
+  ]);
+  for (const mitigation of mitigations) {
+    if (savedPids.has(mitigation.pid)) continue;
+    const incident = fallbackIncidentFromMitigation(mitigation, kernelEvents);
+    if (!incident) continue;
+    savedPids.add(mitigation.pid);
+    incidents.push(incident);
+  }
+  incidents.sort((a, b) => activityTime(b) - activityTime(a));
+  res.json(incidents.slice(0, count));
 });
 
 app.post("/api/clear", async (_req, res) => {

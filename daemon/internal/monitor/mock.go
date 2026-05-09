@@ -15,6 +15,13 @@ import (
 // 30 samples = 30 seconds of history used to compute the per-process baseline.
 const cpuHistoryWindow = 30
 
+// fdHistoryWindow is the number of 1-second poll samples retained per PID.
+// The mock poller uses it to distinguish real FD growth from desktop apps that
+// legitimately keep hundreds of descriptors open at a stable baseline.
+const fdHistoryWindow = 10
+
+const fdGrowthThreshold = 100
+
 // isCPUSpike returns true when current CPU represents a genuine anomaly rather
 // than a process's normal operating level.
 //
@@ -39,6 +46,19 @@ func isCPUSpike(history []float64, current, spikerDelta float64) bool {
 	return current >= baseline+spikerDelta
 }
 
+func isFDLeakGrowth(history []int, current int) bool {
+	if len(history) < 5 {
+		return false
+	}
+	minFDs := history[0]
+	for _, count := range history[1:] {
+		if count < minFDs {
+			minFDs = count
+		}
+	}
+	return current >= minFDs+fdGrowthThreshold
+}
+
 // runMockPoller polls `ps aux` every second to detect anomalies.
 // Works on macOS and Linux without any kernel privileges.
 func (m *Monitor) runMockPoller() {
@@ -47,8 +67,11 @@ func (m *Monitor) runMockPoller() {
 	// Track consecutive high-CPU seconds per PID to avoid alert storms
 	highCPUCount := make(map[int]int)
 	alertedPIDs := make(map[int]bool)
+	fdSuppressed := make(map[int]bool)
 	// cpuHistory[pid] = rolling window of recent CPU% readings for baseline computation
 	cpuHistory := make(map[int][]float64)
+	// fdHistory[pid] = rolling window of recent FD counts for leak-growth detection
+	fdHistory := make(map[int][]int)
 	// watchdogDeadlines[pid] = time after which the daemon force-kills if still anomalous
 	watchdogDeadlines := make(map[int]time.Time)
 
@@ -82,6 +105,13 @@ func (m *Monitor) runMockPoller() {
 					h = h[len(h)-cpuHistoryWindow:]
 				}
 				cpuHistory[p.PID] = h
+
+				fh := fdHistory[p.PID]
+				fh = append(fh, p.FDCount)
+				if len(fh) > fdHistoryWindow {
+					fh = fh[len(fh)-fdHistoryWindow:]
+				}
+				fdHistory[p.PID] = fh
 
 				if p.CPUPercent >= m.cfg.CPUThreshold {
 					highCPUCount[p.PID]++
@@ -137,11 +167,23 @@ func (m *Monitor) runMockPoller() {
 					highCPUCount[p.PID] = 0
 				}
 
-				// FD anomaly check (Linux only via /proc; skip on macOS gracefully)
+				// FD anomaly check — populateFDCounts uses lsof on macOS, /proc on Linux.
 				fdKey := -p.PID
 				if p.FDCount >= m.cfg.FDThreshold {
 					if !alertedPIDs[fdKey] {
+						tmpEv := KernelEvent{PID: p.PID, Process: p, Type: EventFDAnomaly}
+						procClass, _ := ClassifyProcess(&tmpEv)
+						if procClass != ClassLeakSimulator && !isFDLeakGrowth(fh, p.FDCount) {
+							if !fdSuppressed[fdKey] {
+								log.Printf("[mock] suppressed FD alert for PID %d (%s) at %d FDs — stable baseline (class=%s)",
+									p.PID, p.Name, p.FDCount, procClass)
+								fdSuppressed[fdKey] = true
+							}
+							continue
+						}
+
 						alertedPIDs[fdKey] = true
+						delete(fdSuppressed, fdKey)
 						ev := KernelEvent{
 							ID:        newEventID(),
 							Timestamp: time.Now(),
@@ -153,17 +195,20 @@ func (m *Monitor) runMockPoller() {
 						ev.ProcessClass, ev.AnomalyType = ClassifyProcess(&ev)
 						m.Emit(ev)
 					}
-				} else if alertedPIDs[fdKey] {
-					delete(alertedPIDs, fdKey)
-					ev := KernelEvent{
-						ID:        newEventID(),
-						Timestamp: time.Now(),
-						Type:      EventResolved,
-						PID:       p.PID,
-						Process:   p,
-						Message:   fmt.Sprintf("PID %d (%s) FD count normalized to %d", p.PID, p.Name, p.FDCount),
+				} else {
+					delete(fdSuppressed, fdKey)
+					if alertedPIDs[fdKey] {
+						delete(alertedPIDs, fdKey)
+						ev := KernelEvent{
+							ID:        newEventID(),
+							Timestamp: time.Now(),
+							Type:      EventResolved,
+							PID:       p.PID,
+							Process:   p,
+							Message:   fmt.Sprintf("PID %d (%s) FD count normalized to %d", p.PID, p.Name, p.FDCount),
+						}
+						m.Emit(ev)
 					}
-					m.Emit(ev)
 				}
 			}
 
@@ -220,6 +265,17 @@ func (m *Monitor) runMockPoller() {
 					delete(highCPUCount, pid)
 					delete(watchdogDeadlines, pid)
 					delete(cpuHistory, pid)
+					delete(fdHistory, pid)
+					delete(fdSuppressed, pid)
+				}
+			}
+			for pid := range fdSuppressed {
+				absPID := pid
+				if absPID < 0 {
+					absPID = -pid
+				}
+				if !livePIDs[absPID] {
+					delete(fdSuppressed, pid)
 				}
 			}
 

@@ -27,7 +27,9 @@ func populateFDCounts(procs []ProcessStats) {
 	cmd := exec.Command("lsof", "-F", "fp", "-p", strings.Join(pidStrs, ","))
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	// lsof exits 1 when it can't inspect some PIDs (e.g. root-owned processes on macOS).
+	// Parse whatever output arrived rather than bailing on a partial failure.
+	if err := cmd.Run(); err != nil && out.Len() == 0 {
 		return
 	}
 

@@ -46,6 +46,7 @@ def wait_for_daemon(timeout: int = 30):
 
 def metrics_poller(store: IncidentStore):
     """Background thread: poll daemon every 2s for metrics and push to Redis."""
+    tick = 0
     while True:
         try:
             resp = httpx.get(f"{DAEMON_URL}/processes", timeout=3)
@@ -54,6 +55,13 @@ def metrics_poller(store: IncidentStore):
                     store.push_metric(proc["pid"], proc["cpu_percent"], proc["mem_mb"])
         except Exception:
             pass
+        # Write heartbeat every ~10s (every 5th 2s tick)
+        tick += 1
+        if tick % 5 == 0:
+            try:
+                store.heartbeat()
+            except Exception:
+                pass
         time.sleep(2)
 
 

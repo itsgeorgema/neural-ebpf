@@ -4,7 +4,10 @@ import "./styles.css";
 
 const MAX_POINTS = 72;
 const CPU_THRESHOLD = 50;
-const FD_THRESHOLD = 200;
+// UI-only display threshold. The daemon still uses its configured threshold and
+// growth checks for FD anomaly events; this avoids labeling stable desktop apps
+// with 200-300 normal descriptors as active leaks.
+const FD_THRESHOLD = 1024;
 const POLL_INTERVAL_MS = 1000;
 const WEB_SCROLL_QUERY = "(min-width: 1051px)";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -271,16 +274,17 @@ function ProcessList({ processes, incidents }) {
   );
 }
 
-function agentStatus(monologue) {
-  if (!monologue.length) return { label: "idle", live: false };
+function agentStatus(monologue, agentOnline) {
+  if (!agentOnline) return { label: "offline", live: false };
+  if (!monologue.length) return { label: "idle", live: true };
   const latest = monologue[0];
   const age = Date.now() / 1000 - (latest.timestamp || 0);
   const phase = (latest.phase || "").toUpperCase();
-  if (phase === "FAILED") return { label: "failed", live: false };
-  if (age > 45) return { label: "idle", live: false };
+  if (phase === "FAILED") return { label: "failed", live: true };
+  if (age > 45) return { label: "idle", live: true };
   if (phase === "RESOLVED") return { label: "resolved", live: true };
   if (["ANALYZING", "EXECUTING", "VERIFYING"].includes(phase)) return { label: "active", live: true };
-  return { label: "idle", live: false };
+  return { label: "idle", live: true };
 }
 
 function Controls({ status, processes, incidents, monologue, pulseTick }) {
@@ -290,16 +294,16 @@ function Controls({ status, processes, incidents, monologue, pulseTick }) {
   const totalCpuRaw = processes.reduce((sum, proc) => sum + proc.cpu_percent, 0);
   const systemCpu = systemCpuPercent(totalCpuRaw, status.cpu_cores);
   const suspects = processes.filter(isSuspectProcess).length;
-  const agent = agentStatus(monologue);
+  const agent = agentStatus(monologue, status.agent);
   const elapsed = activeLeak ? Math.floor((now - activeLeak.startedAt) / 1000) : 0;
   const remaining = activeLeak ? Math.max(0, activeLeak.duration - elapsed) : 0;
 
   const servicesReady = status.daemon && status.redis;
   const offlineReason = !status.daemon && !status.redis
-    ? "daemon + agent offline"
+    ? "daemon + redis offline"
     : !status.daemon
     ? "daemon offline"
-    : "agent / redis offline";
+    : "redis offline";
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), POLL_INTERVAL_MS);
