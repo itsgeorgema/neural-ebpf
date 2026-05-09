@@ -195,17 +195,28 @@ func parsePSAux() ([]ProcessStats, error) {
 		cpu, _ := strconv.ParseFloat(fields[2], 64)
 		mem, _ := strconv.ParseFloat(fields[3], 64)
 
-		// Process name: last field (command)
+		// Process name: first word of command column
 		name := fields[10]
 		if idx := strings.LastIndex(name, "/"); idx >= 0 {
 			name = name[idx+1:]
+		}
+
+		// Full command line (executable + all args)
+		cmdLine := strings.Join(fields[10:], " ")
+
+		// STAT column (fields[7]) contains "T" when the process is stopped (SIGSTOP).
+		stat := ""
+		if len(fields) > 7 {
+			stat = fields[7]
 		}
 
 		p := ProcessStats{
 			PID:        pid,
 			Name:       name,
 			CPUPercent: cpu,
-			MemMB:      mem, // this is %MEM from ps, convert if needed
+			MemMB:      mem,
+			CmdLine:    cmdLine,
+			Stopped:    strings.ContainsRune(stat, 'T'),
 		}
 
 		procs = append(procs, p)

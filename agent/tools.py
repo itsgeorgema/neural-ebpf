@@ -16,7 +16,8 @@ def get_processes() -> list[dict]:
 
 @tool
 def kill_process(pid: int, reason: str) -> dict:
-    """Kill a process by PID. Use only as a last resort when throttling fails."""
+    """SIGKILL a process. Terminates it immediately; all resources (CPU, memory, FDs) are freed.
+    Use for: leak_simulator (always), user_script/unknown with fd anomaly, throttle failure escalation."""
     resp = httpx.post(f"{DAEMON_URL}/mitigate", json={
         "pid": pid,
         "action": "kill",
@@ -27,7 +28,10 @@ def kill_process(pid: int, reason: str) -> dict:
 
 @tool
 def suspend_process(pid: int, reason: str) -> dict:
-    """Suspend (SIGSTOP) a process. It will stop consuming CPU immediately."""
+    """SIGSTOP a process. CPU drops to 0 but ALL resources remain held (memory, FDs, handles).
+    WARNING: A stopped process is NOT mitigated. cpu=0 is trivial for a frozen process.
+    Only valid as a brief diagnostic pause before kill_process or resume_process.
+    NEVER use on system_service. NEVER declare RESOLVED while target has stopped=true."""
     resp = httpx.post(f"{DAEMON_URL}/mitigate", json={
         "pid": pid,
         "action": "suspend",
@@ -49,8 +53,9 @@ def resume_process(pid: int, reason: str) -> dict:
 
 @tool
 def throttle_cpu(pid: int, throttle_percent: int, reason: str) -> dict:
-    """Throttle a process's CPU usage to at most throttle_percent (1-100).
-    Uses cpulimit or cgroup v2 under the hood. Prefer this over kill."""
+    """Cap CPU usage via cpulimit (requires cpulimit to be installed; may return success=false).
+    Use for: user_script/unknown cpu anomaly (50%), system_service cpu anomaly (30%).
+    Does NOT affect FD count or memory. Check success field in response before declaring resolved."""
     resp = httpx.post(f"{DAEMON_URL}/mitigate", json={
         "pid": pid,
         "action": "throttle_cpu",

@@ -213,10 +213,29 @@ function CpuGraph({ processes, cpuCores }) {
   );
 }
 
-function ProcessList({ processes }) {
-  const suspects = processes.filter(isSuspectProcess).sort((a, b) => b.cpu_percent - a.cpu_percent);
-  const standard = processes.filter((proc) => !isSuspectProcess(proc)).sort((a, b) => b.cpu_percent - a.cpu_percent);
-  const visible = [...suspects.slice(0, 4), ...standard.slice(0, 8)];
+function ProcessList({ processes, incidents }) {
+  const RESOLVED_TTL_MS = 5 * 60 * 1000;
+  const now = Date.now();
+  const resolvedPids = useMemo(() => {
+    const s = new Set();
+    for (const inc of incidents || []) {
+      const pid = inc.event?.pid;
+      const ts = inc.timestamp ? inc.timestamp * 1000 : 0;
+      if (pid && now - ts < RESOLVED_TTL_MS) s.add(pid);
+    }
+    return s;
+  }, [incidents, now]);
+
+  const suspects = processes
+    .filter((proc) => isSuspectProcess(proc) && !resolvedPids.has(proc.pid))
+    .sort((a, b) => b.cpu_percent - a.cpu_percent);
+  const mitigated = processes
+    .filter((proc) => isSuspectProcess(proc) && resolvedPids.has(proc.pid))
+    .sort((a, b) => b.cpu_percent - a.cpu_percent);
+  const standard = processes
+    .filter((proc) => !isSuspectProcess(proc))
+    .sort((a, b) => b.cpu_percent - a.cpu_percent);
+  const visible = [...suspects.slice(0, 4), ...mitigated.slice(0, 2), ...standard.slice(0, 8)];
 
   return (
     <section className="panel">
@@ -229,19 +248,24 @@ function ProcessList({ processes }) {
       </div>
       <div className="process-list" onWheel={(e) => e.stopPropagation()}>
         {visible.length === 0 && <p className="muted">No process data yet.</p>}
-        {visible.map((proc) => (
-          <article className={isSuspectProcess(proc) ? "process suspect" : "process"} key={proc.pid}>
-            <div>
-              <strong>{proc.name}</strong>
-              <span>PID {proc.pid}</span>
-            </div>
-            <dl>
-              <div><dt>PROC CPU</dt><dd>{proc.cpu_percent.toFixed(1)}%</dd></div>
-              <div><dt>MEM</dt><dd>{Number(proc.mem_mb || 0).toFixed(1)}</dd></div>
-              <div><dt>FD</dt><dd>{proc.fd_count || 0}</dd></div>
-            </dl>
-          </article>
-        ))}
+        {visible.map((proc) => {
+          const isActiveSpect = isSuspectProcess(proc) && !resolvedPids.has(proc.pid);
+          const isMitigated = isSuspectProcess(proc) && resolvedPids.has(proc.pid);
+          const cls = isActiveSpect ? "process suspect" : isMitigated ? "process mitigated" : "process";
+          return (
+            <article className={cls} key={proc.pid}>
+              <div>
+                <strong>{proc.name}</strong>
+                <span>PID {proc.pid}{isMitigated ? " · mitigated" : ""}</span>
+              </div>
+              <dl>
+                <div><dt>PROC CPU</dt><dd>{proc.cpu_percent.toFixed(1)}%</dd></div>
+                <div><dt>MEM</dt><dd>{Number(proc.mem_mb || 0).toFixed(1)}</dd></div>
+                <div><dt>FD</dt><dd>{proc.fd_count || 0}</dd></div>
+              </dl>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -436,7 +460,7 @@ function App() {
       <div className="layout" data-scroll>
         <aside>
           <Controls status={status} processes={processes} incidents={incidents} monologue={monologue} pulseTick={pulseTick} />
-          <ProcessList processes={processes} />
+          <ProcessList processes={processes} incidents={incidents} />
         </aside>
         <div className="main-column">
           <CpuGraph processes={processes} cpuCores={status.cpu_cores} />

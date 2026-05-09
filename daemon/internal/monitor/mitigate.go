@@ -85,9 +85,8 @@ func throttleCPUMacOS(pid, pct int, reason string) MitigationResult {
 		log.Printf("[mitigate] cpulimit %d%% on PID %d (macOS): %s", pct, pid, reason)
 		return MitigationResult{true, fmt.Sprintf("CPU throttled to %d%% via cpulimit", pct), pid, "throttle_cpu"}
 	}
-	// Best-effort: suspend (shows the UI story even if not true throttle)
-	req := MitigationRequest{PID: pid, Action: ActionSuspend, Reason: "throttle fallback"}
-	return suspendProcess(req)
+	log.Printf("[mitigate] cpulimit not found for PID %d — throttle unavailable on macOS without cpulimit (brew install cpulimit)", pid)
+	return MitigationResult{false, "cpulimit not found; install via 'brew install cpulimit' or escalate to kill_process", pid, "throttle_cpu"}
 }
 
 func throttleCgroupV2(pid, pct int) MitigationResult {

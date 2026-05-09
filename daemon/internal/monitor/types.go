@@ -17,6 +17,12 @@ type ProcessStats struct {
 	CPUPercent float64 `json:"cpu_percent"`
 	FDCount    int     `json:"fd_count"`
 	MemMB      float64 `json:"mem_mb"`
+	// CmdLine is the full command + args (e.g. "python3 cpu_leak.py --duration 30").
+	// Empty on eBPF mode; populated by mock poller via ps aux.
+	CmdLine string `json:"cmd_line,omitempty"`
+	// Stopped is true when the process is in a suspended state (SIGSTOP / STAT contains T).
+	// A stopped process showing cpu=0 is NOT mitigated — it will resume on SIGCONT.
+	Stopped bool `json:"stopped,omitempty"`
 }
 
 type KernelEvent struct {
