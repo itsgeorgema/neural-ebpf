@@ -20,7 +20,13 @@ dev-daemon:
 	cd daemon && go run ./cmd/daemon --mock --cpu-threshold=80 --fd-threshold=200
 
 dev-agent:
-	cd agent && python main.py
+	@if [ ! -d agent/.venv ]; then \
+		echo "Creating virtual environment at agent/.venv ..."; \
+		python3 -m venv agent/.venv; \
+	fi
+	@echo "Installing Python dependencies into agent/.venv ..."
+	agent/.venv/bin/pip install -q -r agent/requirements.txt
+	cd agent && .venv/bin/python main.py
 
 dev-dashboard:
 	cd dashboard && npm run dev
@@ -40,7 +46,11 @@ go-tidy:
 	cd daemon && go mod tidy
 
 install-tools:
-	pip install -r agent/requirements.txt
+	@if [ ! -d agent/.venv ]; then \
+		echo "Creating virtual environment at agent/.venv ..."; \
+		python3 -m venv agent/.venv; \
+	fi
+	agent/.venv/bin/pip install -r agent/requirements.txt
 	cd dashboard && npm install
 
 dashboard-build:

@@ -66,16 +66,15 @@ go run ./cmd/daemon --mock --cpu-threshold=80
 ### 3. Python Agent
 
 ```bash
-cd agent
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
 # Create .env
-cp ../.env.example .env
+cp .env.example .env
 # Edit .env and set OPENAI_API_KEY=sk-...
 
-python main.py
+make dev-agent
+# Automatically creates agent/.venv, installs requirements.txt, and runs main.py
 ```
+
+> To activate the venv in your own shell (e.g. for debugging): `source agent/.venv/bin/activate`
 
 ### 4. Dashboard
 
@@ -253,6 +252,6 @@ See the **Action Items** section at the bottom of this README for steps that req
 
 6. **Redis** — `brew services start redis` (macOS) or `docker compose up redis -d`.
 
-7. **Local dependencies** — Create a Python venv for `agent/`, then install `agent/requirements.txt`. Run `npm install` in `dashboard/`.
+7. **Local dependencies** — Run `make install-tools` to create `agent/.venv`, install `agent/requirements.txt` into it, and run `npm install` in `dashboard/`. The venv is also created automatically on the first `make dev-agent` run.
 
 8. **Test the demo** — Run `make dev-daemon` + `make dev-agent` + `make dev-dashboard` in three terminal tabs, then open `http://localhost:8501` and click CPU Leak.
