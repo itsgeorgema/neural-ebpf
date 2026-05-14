@@ -116,16 +116,40 @@ make bpf-compile
 sudo go run ./daemon/cmd/daemon --cpu-threshold=80 --fd-threshold=200
 ```
 
-## Docker Compose (Full Stack, Linux)
+## Minikube (Full Stack)
+
+Runs the complete stack — Redis, daemon, agent, and dashboard — in a local Kubernetes cluster via Minikube. The daemon runs in real eBPF mode (Minikube's VM is Linux).
+
+### Prerequisites
+
+```bash
+brew install minikube kubectl
+```
+
+### Deploy
 
 ```bash
 cp .env.example .env
 # Set OPENAI_API_KEY in .env
 
-docker compose up --build
-# Dashboard: http://localhost:8501
-# Daemon API: http://localhost:8080
+make k8s-up
+# Builds all images into Minikube, applies k8s/ manifests, and prints service URLs
 ```
+
+### Other commands
+
+```bash
+make k8s-status    # show pod status
+make k8s-rebuild   # rebuild images and rollout restart all deployments
+make k8s-down      # delete namespace and stop Minikube
+```
+
+### Notes
+
+- Images are built directly into Minikube's Docker daemon (`imagePullPolicy: Never`) — no registry needed.
+- The daemon pod runs privileged with `hostPID: true` for eBPF tracepoint access.
+- The OpenAI API key is read from `.env` and stored as a Kubernetes Secret (`openai-secret`) in the `neural-ebpf` namespace.
+- Manifests live in `k8s/`; each service has its own file plus a shared `configmap.yaml`.
 
 ## Architecture Deep Dive
 
@@ -216,10 +240,16 @@ neural-ebpf/
 │   ├── server.js                   # Node API for daemon/Redis/scripts
 │   ├── package.json
 │   └── Dockerfile
+├── k8s/
+│   ├── 00-namespace.yaml           # neural-ebpf namespace
+│   ├── configmap.yaml              # shared env (DAEMON_URL, REDIS_*)
+│   ├── redis.yaml                  # Redis Deployment + ClusterIP Service
+│   ├── daemon.yaml                 # Daemon Deployment + NodePort :30080
+│   ├── agent.yaml                  # Agent Deployment
+│   └── dashboard.yaml              # Dashboard Deployment + NodePort :30501
 ├── scripts/
 │   ├── cpu_leak.py                 # CPU anomaly simulator
 │   └── fd_leak.py                  # FD anomaly simulator
-├── docker-compose.yml
 ├── Makefile
 └── .env.example
 ```
@@ -246,8 +276,8 @@ neural-ebpf/
 
 5. **Install `cpulimit`** — For CPU throttling to work on macOS: `brew install cpulimit`. On Linux: `apt-get install cpulimit`.
 
-6. **Redis** — `brew services start redis` (macOS) or `docker compose up redis -d`.
+6. **Redis (local dev only)** — `brew services start redis` (macOS) when running services locally via `make dev-*`. Not needed for `make k8s-up` — Redis runs as a pod.
 
 7. **Local dependencies** — Run `make install-tools` to create `agent/.venv`, install `agent/requirements.txt` into it, and run `npm install` in `dashboard/`. The venv is also created automatically on the first `make dev-agent` run.
 
-8. **Test the demo** — Run `make dev-daemon` + `make dev-agent` + `make dev-dashboard` in three terminal tabs, then open `http://localhost:8501` and click CPU Leak.
+8. **Test the demo** — For local mode: run `make dev-daemon` + `make dev-agent` + `make dev-dashboard` in three terminal tabs, then open `http://localhost:8501`. For Minikube: run `make k8s-up` and use the printed dashboard URL.

@@ -4,6 +4,7 @@ package monitor
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -38,11 +39,14 @@ func (m *Monitor) runEBPF() {
 	}
 	defer coll.Close()
 
-	// Set threshold in BPF map
+	// Set threshold in BPF map.
+	// bpfWindowNS must match WINDOW_NS in cpu_monitor.bpf.c (100ms).
+	// The threshold is expressed as CPU-ns accumulated within that window.
+	const bpfWindowNS = 100_000_000
 	threshMap := coll.Maps["cpu_threshold"]
 	if threshMap != nil {
 		key := uint32(0)
-		val := uint64(m.cfg.CPUThreshold * 1e9 / 100) // nanoseconds of CPU per second
+		val := uint64(m.cfg.CPUThreshold) * bpfWindowNS / 100
 		_ = threshMap.Put(key, val)
 	}
 
@@ -71,7 +75,7 @@ func (m *Monitor) runEBPF() {
 
 		record, err := rd.Read()
 		if err != nil {
-			if perf.IsDeadlineExceeded(err) {
+			if errors.Is(err, os.ErrDeadlineExceeded) {
 				continue
 			}
 			log.Printf("[ebpf] read error: %v", err)
@@ -87,7 +91,7 @@ func (m *Monitor) runEBPF() {
 		stats := ProcessStats{
 			PID:        int(ev.PID),
 			Name:       name,
-			CPUPercent: float64(ev.Duration) / 1e7, // rough: ns over 100ms window
+			CPUPercent: float64(ev.Duration) / 1e6, // ns in 100ms window → percent (80ms/100ms = 80%)
 			FDCount:    getFDCount(int(ev.PID)),
 		}
 

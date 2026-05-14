@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neural-ebpf-config
+  namespace: neural-ebpf
+data:
+  DAEMON_URL: "http://daemon:8080"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
