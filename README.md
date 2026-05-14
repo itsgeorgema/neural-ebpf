@@ -224,13 +224,9 @@ neural-ebpf/
 └── .env.example
 ```
 
-## Action Items (Manual Steps Required)
-
-See the **Action Items** section at the bottom of this README for steps that require your environment.
-
 ---
 
-### Action Items for You
+### Setup Required 
 
 1. **`go mod tidy`** — Run `cd daemon && go mod tidy` to generate `go.sum` and download dependencies (`cilium/ebpf`, `gorilla/mux`).
 
